@@ -1,0 +1,33 @@
+# Git
+.git
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Binaries
+/scraper
+/server
+*.exe
+
+# Air / tmp
+/tmp
+.air.toml
+
+# Environment
+.env
+.env.example
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docs
+README.md
+AGENTS.md

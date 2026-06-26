@@ -1,0 +1,508 @@
+# Go Waktu Solat API
+
+A Go/Gofiber prayer time API server that scrapes prayer times from [JAKIM's e-Solat](https://www.e-solat.gov.my) and serves them in a v1-compatible REST API with GPS zone auto-detection.
+
+## Quick Start
+
+```bash
+# Clone and build
+git clone https://github.com/shabilullah/gowaktusolat.git
+cd gowaktusolat
+go build ./cmd/scraper && go build ./cmd/server
+
+# Seed zones and scrape 2026 prayer times (~80s for all 53 zones)
+./scraper seed-zones
+./scraper scrape --year=2026
+
+# Start the API server
+./server
+# Server listening on http://localhost:8080
+```
+
+## Development
+
+```bash
+# Install air (one-time)
+go install github.com/air-verse/air@latest
+
+# Start with hot-reload — rebuilds on file changes
+# (uses .air.toml pre-configured to build cmd/server)
+air
+
+# Or run directly (no hot-reload)
+go run ./cmd/server
+```
+
+### Environment variables
+
+All settings are read from a `.env` file at the project root (optional). Copy `.env.example` to `.env` and edit:
+
+```bash
+cp .env.example .env
+```
+
+| Variable       | Default              | Description                                      |
+|----------------|----------------------|--------------------------------------------------|
+| `PORT`         | `8080`               | Server listen port                               |
+| `DB_PATH`      | `data/waktusolat.db` | SQLite database file path                        |
+| `BASE_PATH`    | `""`                 | URL prefix (reserved)                            |
+| `CORS_ORIGINS` | `*`                  | `*` for all, or comma-separated domains |
+| `PREFORK`      | `false`              | Spawn one process per CPU core (`true`/`1`)    |
+
+**CORS examples:**
+
+```bash
+# Allow all origins (default)
+CORS_ORIGINS=*
+
+# Single domain
+CORS_ORIGINS=https://myapp.com
+
+# Multiple domains
+CORS_ORIGINS=https://myapp.com,https://admin.myapp.com,https://api.myapp.com
+```
+### Database
+
+| Driver | Package | CGO | Notes |
+|--------|---------|-----|-------|
+| SQLite | `modernc.org/sqlite` | No | Pure Go, WAL mode enabled, single-file, no external deps |
+
+The driver is fixed to SQLite — there is no driver abstraction layer. All code uses
+`sql.Open("sqlite", path)`. In-memory databases (`:memory:`) are used in tests.
+
+**Limitations with SQLite:**
+
+- **Single writer**: WAL mode allows concurrent reads but serializes writes. Writes are rare (settings changes, scheduled scraper) so contention is negligible.
+- **Prefork**: Safe to enable — each worker opens its own connection pool and WAL serializes the occasional write.
+- **File locking**: Running the scraper and server against the same DB simultaneously works (WAL mode).
+
+### Project layout
+
+### Running tests
+
+```bash
+go test ./internal/...
+```
+
+## Production
+
+### Docker
+
+```bash
+# Pull and run
+docker run -d \
+  --name gowaktusolat \
+  -p 8080:8080 \
+  -v ./data:/data \
+  -e CORS_ORIGINS=* \
+  -e PREFORK=false \
+  ghcr.io/shabilullah/gowaktusolat:master
+
+# Or use docker compose
+docker compose up -d
+```
+
+Edit `docker-compose.yml` to change settings — all environment variables are listed inline with comments.
+The `.env` file is also mounted (optional) for the Go app's built-in `.env` loader.
+
+Seed data after first run (data directory is volume-mounted):
+
+```bash
+go run ./cmd/scraper seed-zones
+go run ./cmd/scraper scrape --year=$(date +%Y)
+```
+
+Images are published automatically to `ghcr.io/shabilullah/gowaktusolat` on every push to `master` and on version tags (`v1.0.0` → `:1.0`, `:1`, `:latest`).
+
+### Binary
+
+```bash
+# Cross-compile for Linux AMD64
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o server ./cmd/server
+GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd/scraper
+```
+
+### Systemd
+
+1. Copy `server`, `scraper` binaries and `data/` directory to the target host.
+2. Seed zones and scrape initial data:
+   ```bash
+   ./scraper seed-zones
+   ./scraper scrape --year=$(date +%Y)
+   ```
+3. Create the systemd unit:
+   ```ini
+   # /etc/systemd/system/gowaktusolat.service
+   [Unit]
+   Description=Go Waktu Solat API
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=nobody
+   WorkingDirectory=/opt/gowaktusolat
+   Environment=PORT=8080
+   Environment=DB_PATH=/opt/gowaktusolat/data/waktusolat.db
+   ExecStart=/opt/gowaktusolat/server
+   Restart=always
+   RestartSec=5
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+4. Enable and start:
+   ```bash
+   sudo systemctl enable --now gowaktusolat
+   ```
+5. Enable the scheduler to auto-scrape yearly:
+   ```bash
+   curl -X PUT http://localhost:8080/api/settings \
+     -H 'Content-Type: application/json' \
+     -d '{"scraper":{"enabled":true,"schedule":"0 2 1 1 *"}}'
+   ```
+   This runs the scraper at 2am on January 1st each year.
+
+### Reverse proxy (nginx)
+
+```nginx
+server {
+    listen 80;
+    server_name solat.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+## API Reference
+
+All endpoints return `Content-Type: application/json` unless noted. Cached routes include `Cache-Control: public, max-age=3600`.
+
+### Zones
+
+<details>
+<summary><code>GET /api/zones</code> — List all zones</summary>
+
+```
+GET /api/zones
+```
+
+**Response** `200` — array of zone objects
+
+```json
+[
+  {"jakimCode": "JHR01", "negeri": "Johor", "daerah": "Pulau Aur dan Pulau Pemanggil"},
+  {"jakimCode": "SGR01", "negeri": "Selangor", "daerah": "Gombak, Petaling, Sepang, Hulu Langat, Hulu Selangor, Shah Alam"}
+]
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `jakimCode` | `string` | JAKIM zone code |
+| `negeri` | `string` | State name (Malay) |
+| `daerah` | `string` | District(s) covered |
+
+</details>
+
+<details>
+<summary><code>GET /api/zones/:state</code> — Filter zones by state prefix</summary>
+
+```
+GET /api/zones/SGR
+```
+
+**Response** `200` — filtered array
+
+```json
+[
+  {"jakimCode": "SGR01", "negeri": "Selangor", "daerah": "Gombak, Petaling, Sepang, Hulu Langat, Hulu Selangor, Shah Alam"},
+  {"jakimCode": "SGR02", "negeri": "Selangor", "daerah": "Kuala Selangor, Sabak Bernam"},
+  {"jakimCode": "SGR03", "negeri": "Selangor", "daerah": "Klang, Kuala Langat"}
+]
+```
+
+</details>
+
+<details>
+<summary><code>GET /api/zones/:lat/:long</code> — Detect zone by GPS coordinate</summary>
+
+```
+GET /api/zones/3.068498/101.630263
+```
+
+**Response** `200` — detected zone
+
+```json
+{"zone": "SGR01", "state": "SGR", "district": "Petaling"}
+```
+
+**Errors**
+
+| Status | Body | Cause |
+|--------|------|-------|
+| `422` | `{"message":"Invalid latitude"}` | Non-numeric lat/long |
+| `404` | `{"message":"No zone found for the given coordinates"}` | Point outside Malaysia |
+
+</details>
+
+### Prayer Times (Solat)
+
+<details>
+<summary><code>GET /api/solat/:zone</code> — Month of prayer times</summary>
+
+```
+GET /api/solat/SGR01?month=6&year=2026
+```
+
+**Query parameters**
+
+| Param   | Type   | Default        | Constraints |
+|---------|--------|----------------|-------------|
+| `month` | `int`  | current month  | 1–12        |
+| `year`  | `int`  | current year   | >= 2020     |
+
+**Response** `200`
+
+```json
+{
+  "prayerTime": [
+    {
+      "hijri": "1447-12-15",
+      "date": "01-Jun-2026",
+      "day": "Monday",
+      "imsak": "05:39:00",
+      "fajr": "05:49:00",
+      "syuruk": "07:01:00",
+      "dhuha": "07:26:00",
+      "dhuhr": "13:14:00",
+      "asr": "16:39:00",
+      "maghrib": "19:22:00",
+      "isha": "20:37:00"
+    }
+  ],
+  "status": "OK!",
+  "serverTime": "2026-06-26 20:34:11",
+  "periodType": "month",
+  "lang": "",
+  "zone": "SGR01",
+  "bearing": ""
+}
+```
+
+**Errors**
+
+| Status | Body | Cause |
+|--------|------|-------|
+| `404` | `{"message":"No data found for zone: XXXXX for JUNE/2026"}` | No data scraped |
+
+</details>
+
+<details>
+<summary><code>GET /api/solat/:zone/:day</code> — Single day prayer time</summary>
+
+```
+GET /api/solat/SGR01/15?month=6&year=2026
+```
+
+**Query parameters** — same as month endpoint.
+
+**Response** `200` — `prayerTime` is a single object, `periodType` is `"day"`
+
+```json
+{
+  "prayerTime": {
+    "hijri": "1447-12-29",
+    "date": "15-Jun-2026",
+    "day": "Monday",
+    "imsak": "05:30:00",
+    "fajr": "05:40:00",
+    "syuruk": "07:05:00",
+    "dhuha": "07:22:00",
+    "dhuhr": "13:15:00",
+    "asr": "16:30:00",
+    "maghrib": "19:12:00",
+    "isha": "20:27:00"
+  },
+  "status": "OK!",
+  "serverTime": "2026-06-26 20:34:11",
+  "periodType": "day",
+  "lang": "",
+  "zone": "SGR01",
+  "bearing": ""
+}
+```
+
+**Errors**
+
+| Status | Body | Cause |
+|--------|------|-------|
+| `400` | `{"message":"Invalid day parameter"}` | Non-numeric or out of range |
+| `400` | `{"message":"Day 32 out of range for June/2026"}` | Day exceeds month length |
+| `404` | Same as month endpoint | No data |
+
+</details>
+
+<details>
+<summary><code>GET /api/solat/gps/:lat/:long</code> — Month by GPS (auto-detect zone)</summary>
+
+```
+GET /api/solat/gps/3.068498/101.630263?month=6&year=2026
+```
+
+**Query parameters** — same as month endpoint.
+
+**Response** `200` — same shape as month endpoint, `zone` reflects the auto-detected code
+
+**Errors** — same GPS errors as `/api/zones/:lat/:long` (`422`, `404`), plus the standard zone-not-found.
+
+</details>
+
+### Jadual Solat (PDF)
+
+<details>
+<summary><code>GET /api/jadual_solat/:zone</code> — Printable PDF prayer timetable</summary>
+
+```
+GET /api/jadual_solat/SGR01?month=6&year=2026
+```
+
+**Query parameters**
+
+| Param         | Type     | Default     | Description                       |
+|---------------|----------|-------------|-----------------------------------|
+| `month`       | `int`    | current     | 1–12                              |
+| `year`        | `int`    | current     | >= 2020                           |
+| `orientation` | `string` | `landscape` | `landscape` or `portrait`         |
+| `timeFormat`  | `string` | `24h`       | `24h` = `15:04`, `12h` = `3:04 PM` |
+
+**Response** `200` — `Content-Type: application/pdf`
+
+A4 PDF with title, zone header, and table: Tarikh | Hijri | Imsak | Subuh | Syuruk | Zohor | Asar | Maghrib | Isyak.
+
+**Errors**
+
+| Status | Body | Cause |
+|--------|------|-------|
+| `404` | `{"message":"No data found for zone: ..."}` | No data |
+
+</details>
+
+### Settings
+
+<details>
+<summary><code>GET /api/settings</code> — Read scraper configuration</summary>
+
+```
+GET /api/settings
+```
+
+**Response** `200`
+
+```json
+{
+  "scraper": {
+    "enabled": false,
+    "schedule": "0 2 1 1 *",
+    "last_run": "2026-06-26T12:53:30Z",
+    "last_status": "success: 53/53 zones"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enabled` | `bool` | Whether the cron scheduler is active |
+| `schedule` | `string` | Cron expression (`min hour dom month dow`) |
+| `last_run` | `string` | ISO 8601 timestamp of last scrape |
+| `last_status` | `string` | Result of last scrape (`"running"`, `"success: N/N zones"`, `"partial: N/N zones (M failed)"`) |
+
+</details>
+
+<details>
+<summary><code>PUT /api/settings</code> — Update scraper configuration</summary>
+
+```
+PUT /api/settings
+Content-Type: application/json
+
+{"scraper": {"enabled": true, "schedule": "0 2 1 1 *"}}
+```
+
+**Request body** — partial update, all fields optional:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `scraper.enabled` | `bool` | Enable/disable scheduled scraping |
+| `scraper.schedule` | `string` | Valid cron expression (5-field: `min hour dom month dow`) |
+
+`last_run` and `last_status` are **read-only** — setting them is silently ignored (not an error).
+
+**Response** `200` — full settings object (same shape as GET)
+
+**Errors**
+
+| Status | Body | Cause |
+|--------|------|-------|
+| `400` | `{"message":"Invalid cron expression"}` | Bad cron syntax |
+| `400` | `{"message":"Unknown key: xyz"}` | Unrecognized top-level key |
+| `400` | `{"message":"Unknown scraper key: xyz"}` | Unrecognized key inside `scraper` |
+| `400` | `{"message":"Invalid JSON"}` | Malformed body |
+
+</details>
+
+### Fallback
+
+<details>
+<summary><code>GET /*</code> — 404 catch-all</summary>
+
+```
+GET /api/nonexistent
+```
+
+**Response** `404`
+
+```json
+{"message": "No route matched. Please see the API documentation."}
+```
+
+</details>
+
+## Scraper CLI
+
+```bash
+# Seed zones into the database (53 JAKIM zones, embedded in binary)
+./scraper seed-zones
+
+# Scrape all zones for a given year (~80s for all 53 zones)
+./scraper scrape --year=2026
+
+# Custom DB path
+DB_PATH=/tmp/test.db ./scraper seed-zones
+DB_PATH=/tmp/test.db ./scraper scrape --year=2025
+```
+
+## State / Zone Reference
+
+| Prefix | State | Zones |
+|--------|-------|-------|
+| JHR | Johor | 01–04 |
+| KDH | Kedah | 01–07 |
+| KTN | Kelantan | 01–02 |
+| MLK | Melaka | 01 |
+| NGS | Negeri Sembilan | 01–03 |
+| PHG | Pahang | 01–03 |
+| PLS | Perlis | 01 |
+| PNG | Pulau Pinang | 01 |
+| PRK | Perak | 01–04 |
+| SBH | Sabah | 01–09 |
+| SGR | Selangor | 01–03 |
+| SWK | Sarawak | 01–09 |
+| TRG | Terengganu | 01–04 |
+| WLY | W.P. (Kuala Lumpur, Putrajaya, Labuan) | 01–02 |
+
+## License
+
+MIT

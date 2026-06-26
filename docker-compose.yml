@@ -1,0 +1,16 @@
+services:
+  app:
+    image: ghcr.io/shabilullah/gowaktusolat:master
+    container_name: gowaktusolat
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - PORT=8080
+      - DB_PATH=/data/waktusolat.db
+      - CORS_ORIGINS=*                    # comma-separated, "*" for all
+      - PREFORK=false                     # spawn one process per CPU core
+      - TZ=Asia/Kuala_Lumpur              # timezone for logs
+    volumes:
+      - ./data:/data
+      - ./.env:/.env:ro                   # optional — app reads this at runtime too
+    restart: unless-stopped
