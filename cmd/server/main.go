@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	json "github.com/goccy/go-json"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/etag"
@@ -58,7 +59,9 @@ func main() {
 	}
 
 	app := fiber.New(fiber.Config{
-		AppName: "Go Waktu Solat API",
+		AppName:     "Go Waktu Solat API",
+		JSONEncoder: json.Marshal,
+		JSONDecoder: json.Unmarshal,
 	})
 
 	app.Use(cors.New(cors.Config{
