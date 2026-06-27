@@ -10,14 +10,15 @@ git clone https://github.com/shabilullah/gowaktusolat.git
 cd gowaktusolat
 go build ./cmd/scraper && go build ./cmd/server
 
-# Seed zones and scrape 2026 prayer times (~80s for all 53 zones)
+# Seed zones and scrape current year prayer times (~80s for all 53 zones).
+# On first startup, the server auto-seeds zones + current year data.
+# These CLI commands are for manual runs or custom DB paths:
 ./scraper seed-zones
-./scraper scrape --year=2026
+./scraper scrape --year=$(date +%Y)
 
-# Start the API server
+# Start the API server (auto-seeds on first run, scraper runs in background)
 ./server
 # Server listening on http://localhost:8080
-```
 
 ## Development
 
@@ -49,6 +50,7 @@ cp .env.example .env
 | `CORS_ORIGINS` | `*`                  | `*` for all, or comma-separated domains |
 | `PREFORK`      | `false`              | Spawn one process per CPU core (`true`/`1`)    |
 | `API_KEY`      | `""`                 | Protects `/api/settings` when set; send as `X-API-Key` header |
+| `SEEDER_SCHED` | `""`                 | Cron schedule for auto-scheduler; omit to disable |
 
 **CORS examples:**
 
@@ -98,16 +100,21 @@ docker run -d \
   -e CORS_ORIGINS=* \
   -e PREFORK=false \
   -e API_KEY= \
+  -e SEEDER_SCHED= \
   ghcr.io/shabilullah/gowaktusolat:master
 
 # Or use docker compose
 docker compose up -d
 ```
 
+The server auto-seeds zones and current-year prayer times on first run (~80s in background).
+Set `SEEDER_SCHED` to a cron expression (e.g. `0 2 1 1 *` for yearly on Jan 1 at 2am) to enable auto-scraping on schedule.
+Omit it or leave empty to disable recurring scrapes.
+
 Edit `docker-compose.yml` to change settings — all environment variables are listed inline with comments.
 The `.env` file is also mounted (optional) for the Go app's built-in `.env` loader.
 
-Seed data after first run (data directory is volume-mounted):
+Manual seed/scrape from the host (against the volume-mounted DB):
 
 ```bash
 go run ./cmd/scraper seed-zones
@@ -127,7 +134,7 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd/scraper
 ### Systemd
 
 1. Copy `server`, `scraper` binaries and `data/` directory to the target host.
-2. Seed zones and scrape initial data:
+2. Seed zones and scrape initial data (or skip — the server auto-seeds on first start):
    ```bash
    ./scraper seed-zones
    ./scraper scrape --year=$(date +%Y)
@@ -145,6 +152,7 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd/scraper
    WorkingDirectory=/opt/gowaktusolat
    Environment=PORT=8080
    Environment=DB_PATH=/opt/gowaktusolat/data/waktusolat.db
+   Environment=SEEDER_SCHED=0 2 1 1 *
    ExecStart=/opt/gowaktusolat/server
    Restart=always
    RestartSec=5
@@ -156,6 +164,7 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd/scraper
    ```bash
    sudo systemctl enable --now gowaktusolat
    ```
+   Set `SEEDER_SCHED` in the unit file to enable recurring scrapes, or use the API:
    ```bash
    curl -X PUT http://localhost:8080/api/settings \
      -H 'Content-Type: application/json' \

@@ -14,6 +14,7 @@ type Config struct {
 	CORSOrigins string
 	Prefork     bool
 	APIKey      string
+	SeederSched string
 }
 
 func Load() *Config {
@@ -25,6 +26,7 @@ func Load() *Config {
 		CORSOrigins: envOrDefault("CORS_ORIGINS", "*"),
 		Prefork:     envBool("PREFORK", false),
 		APIKey:      os.Getenv("API_KEY"),
+		SeederSched: os.Getenv("SEEDER_SCHED"),
 	}
 }
 
