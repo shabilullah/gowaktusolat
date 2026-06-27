@@ -123,6 +123,9 @@ func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector) {
 	api.Get("/zones/:lat/:long", zonesHandler.GetByCoordinate)
 	api.Get("/zones/:state", zonesHandler.GetByState)
 
+	cacheHandler := &CacheHandler{}
+	api.Post("/cache/reset", cacheHandler.Reset)
+
 	app.Use(func(c fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{
 			"message": "No route matched. Please see the API documentation.",

@@ -462,6 +462,27 @@ GET /api/last-update
 
 </details>
 
+
+### Cache
+
+<details>
+<summary><code>POST /api/cache/reset</code> — Invalidate cached responses</summary>
+
+
+```
+POST /api/cache/reset
+```
+
+**Response** `200`
+
+```json
+{"message": "Cache invalidated"}
+```
+
+Signals downstream caches (browsers, CDNs, proxies) to purge cached API responses. Only accepts `POST`; `GET` returns 404.
+
+</details>
+
 ### Fallback
 
 <details>
