@@ -106,33 +106,34 @@ func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector, cf
 		apiKey = k.GetAuthKey()
 	}
 
-	settingsGroup := app.Group("/api")
-	if apiKey != "" {
-		settingsGroup.Use(authMiddleware(apiKey))
-	}
-
-	settingsHandler := &Settings{DB: database}
-	settingsGroup.Get("/settings", settingsHandler.Get)
-	settingsGroup.Put("/settings", settingsHandler.Put)
-
-	cachedGroup := app.Group("/api")
-	cachedGroup.Use(func(c fiber.Ctx) error {
+	api := app.Group("/api")
+	api.Use(func(c fiber.Ctx) error {
 		c.Set("Cache-Control", "public, max-age=3600")
 		return c.Next()
 	})
 
+	settingsHandler := &Settings{DB: database}
+	if apiKey != "" {
+		mw := authMiddleware(apiKey)
+		api.Get("/settings", mw, settingsHandler.Get)
+		api.Put("/settings", mw, settingsHandler.Put)
+	} else {
+		api.Get("/settings", settingsHandler.Get)
+		api.Put("/settings", settingsHandler.Put)
+	}
+
 	prayerHandler := &PrayerTime{DB: database, Detector: detector}
-	cachedGroup.Get("/solat/:zone", prayerHandler.FetchMonth)
-	cachedGroup.Get("/solat/:zone/:day", prayerHandler.FetchDay)
-	cachedGroup.Get("/solat/gps/:lat/:long", prayerHandler.FetchMonthByGPS)
+	api.Get("/solat/:zone", prayerHandler.FetchMonth)
+	api.Get("/solat/:zone/:day", prayerHandler.FetchDay)
+	api.Get("/solat/gps/:lat/:long", prayerHandler.FetchMonthByGPS)
 
 	zonesHandler := &Zones{DB: database, Detector: detector}
-	cachedGroup.Get("/zones", zonesHandler.Index)
-	cachedGroup.Get("/zones/:lat/:long", zonesHandler.GetByCoordinate)
-	cachedGroup.Get("/zones/:state", zonesHandler.GetByState)
+	api.Get("/zones", zonesHandler.Index)
+	api.Get("/zones/:lat/:long", zonesHandler.GetByCoordinate)
+	api.Get("/zones/:state", zonesHandler.GetByState)
 
 	jadualHandler := &JadualSolat{DB: database}
-	cachedGroup.Get("/jadual_solat/:zone", jadualHandler.FetchMonth)
+	api.Get("/jadual_solat/:zone", jadualHandler.FetchMonth)
 
 	app.Use(func(c fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{
