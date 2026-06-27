@@ -110,6 +110,9 @@ func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector) {
 	lastUpdateHandler := &LastUpdate{DB: database}
 	api.Get("/last-update", lastUpdateHandler.Get)
 
+	jadualHandler := &JadualSolat{DB: database}
+	api.Get("/jadual_solat/:zone", jadualHandler.FetchMonth)
+
 	prayerHandler := &PrayerTime{DB: database, Detector: detector}
 	api.Get("/solat/:zone", prayerHandler.FetchMonth)
 	api.Get("/solat/:zone/:day", prayerHandler.FetchDay)
@@ -119,9 +122,6 @@ func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector) {
 	api.Get("/zones", zonesHandler.Index)
 	api.Get("/zones/:lat/:long", zonesHandler.GetByCoordinate)
 	api.Get("/zones/:state", zonesHandler.GetByState)
-
-	jadualHandler := &JadualSolat{DB: database}
-	api.Get("/jadual_solat/:zone", jadualHandler.FetchMonth)
 
 	app.Use(func(c fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{
