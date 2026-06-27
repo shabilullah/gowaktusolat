@@ -1,8 +1,6 @@
 package api
 
-import (
-	"github.com/gofiber/fiber/v3"
-)
+import "github.com/gofiber/fiber/v3"
 
 type CacheHandler struct{}
 

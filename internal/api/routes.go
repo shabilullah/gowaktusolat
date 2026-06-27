@@ -5,7 +5,10 @@ import (
 	"strconv"
 	"strings"
 
+	"time"
+
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/cache"
 	"github.com/shabilullah/gowaktusolat/internal/geo"
 )
 
@@ -102,10 +105,35 @@ func (h *Zones) GetByCoordinate(c fiber.Ctx) error {
 
 func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector) {
 	api := app.Group("/api")
+
 	api.Use(func(c fiber.Ctx) error {
 		c.Set("Cache-Control", "public, max-age=3600")
 		return c.Next()
 	})
+
+	api.Use(cache.New(cache.Config{
+		Next: func(c fiber.Ctx) bool {
+			path := c.Path()
+			if strings.Contains(path, "jadual_solat") || strings.Contains(path, "cache/reset") {
+				return true
+			}
+			return false
+		},
+		ExpirationGenerator: func(c fiber.Ctx, cfg *cache.Config) time.Duration {
+			path := c.Path()
+			switch {
+			case strings.Contains(path, "/zones"):
+				return 6 * time.Hour
+			case strings.Contains(path, "/solat"):
+				return 1 * time.Hour
+			default:
+				return 5 * time.Minute
+			}
+		},
+		CacheInvalidator: func(c fiber.Ctx) bool {
+			return fiber.Query[bool](c, "invalidateCache")
+		},
+	}))
 
 	lastUpdateHandler := &LastUpdate{DB: database}
 	api.Get("/last-update", lastUpdateHandler.Get)
