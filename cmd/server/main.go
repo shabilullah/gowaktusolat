@@ -8,6 +8,7 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
+	"github.com/gofiber/fiber/v3/middleware/etag"
 	_ "modernc.org/sqlite"
 
 	"github.com/shabilullah/gowaktusolat/internal/api"
@@ -61,6 +62,8 @@ func main() {
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: cfg.CORSOriginsSlice(),
 	}))
+
+	app.Use(etag.New())
 
 	api.RegisterRoutes(app, database, detector)
 
