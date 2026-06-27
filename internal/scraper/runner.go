@@ -50,7 +50,7 @@ func RunFullScrape(ctx context.Context, db *sql.DB, year int) {
 		default:
 		}
 
-		times, err := FetchPrayerTimes(ctx, zone, year)
+		times, err := FetchPrayerTimes(zone, year)
 		if err != nil {
 			log.Printf("[scraper] ✗ %s: %v", zone, err)
 			failCount++
