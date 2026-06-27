@@ -48,6 +48,7 @@ cp .env.example .env
 | `BASE_PATH`    | `""`                 | URL prefix (reserved)                            |
 | `CORS_ORIGINS` | `*`                  | `*` for all, or comma-separated domains |
 | `PREFORK`      | `false`              | Spawn one process per CPU core (`true`/`1`)    |
+| `API_KEY`      | `""`                 | Protects `/api/settings` when set; send as `X-API-Key` header |
 
 **CORS examples:**
 
@@ -96,6 +97,7 @@ docker run -d \
   -v ./data:/data \
   -e CORS_ORIGINS=* \
   -e PREFORK=false \
+  -e API_KEY= \
   ghcr.io/shabilullah/gowaktusolat:master
 
 # Or use docker compose
@@ -154,10 +156,10 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd/scraper
    ```bash
    sudo systemctl enable --now gowaktusolat
    ```
-5. Enable the scheduler to auto-scrape yearly:
    ```bash
    curl -X PUT http://localhost:8080/api/settings \
      -H 'Content-Type: application/json' \
+     -H 'X-API-Key: your-secret-key' \
      -d '{"scraper":{"enabled":true,"schedule":"0 2 1 1 *"}}'
    ```
    This runs the scraper at 2am on January 1st each year.
@@ -388,15 +390,18 @@ A4 PDF with title, zone header, and table: Tarikh | Hijri | Imsak | Subuh | Syur
 |--------|------|-------|
 | `404` | `{"message":"No data found for zone: ..."}` | No data |
 
-</details>
-
 ### Settings
+
+**Authentication**: When `API_KEY` is configured, all settings endpoints require the header `X-API-Key: <key>`. Requests without a matching key receive `401 Unauthorized`. When `API_KEY` is empty (default), no authentication is required.
+
 
 <details>
 <summary><code>GET /api/settings</code> — Read scraper configuration</summary>
 
+
 ```
 GET /api/settings
+X-API-Key: your-secret-key
 ```
 
 **Response** `200`
@@ -427,6 +432,7 @@ GET /api/settings
 ```
 PUT /api/settings
 Content-Type: application/json
+X-API-Key: your-secret-key
 
 {"scraper": {"enabled": true, "schedule": "0 2 1 1 *"}}
 ```
@@ -446,6 +452,7 @@ Content-Type: application/json
 
 | Status | Body | Cause |
 |--------|------|-------|
+| `401` | `{"message":"unauthorized"}` | Missing or wrong `X-API-Key` header |
 | `400` | `{"message":"Invalid cron expression"}` | Bad cron syntax |
 | `400` | `{"message":"Unknown key: xyz"}` | Unrecognized top-level key |
 | `400` | `{"message":"Unknown scraper key: xyz"}` | Unrecognized key inside `scraper` |
