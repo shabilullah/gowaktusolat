@@ -49,6 +49,7 @@ cp .env.example .env
 | `BASE_PATH`    | `""`                 | URL prefix (reserved)                            |
 | `CORS_ORIGINS` | `*`                  | `*` for all, or comma-separated domains |
 | `PREFORK`      | `false`              | Spawn one process per CPU core (`true`/`1`)    |
+| `API_KEY`      | `""`                 | Protects `POST /api/cache/reset` when set; send as `X-API-Key` header |
 | `SEEDER_SCHED` | `""`                 | Cron schedule for auto-scheduler; omit to disable |
 
 **CORS examples:**
@@ -98,6 +99,7 @@ docker run -d \
   -v ./data:/data \
   -e CORS_ORIGINS=* \
   -e PREFORK=false \
+  -e API_KEY= \
   -e SEEDER_SCHED= \
   ghcr.io/shabilullah/gowaktusolat:master
 
@@ -465,15 +467,19 @@ GET /api/last-update
 </details>
 
 
+
 ### Cache
 
 <details>
-<summary><code>POST /api/cache/reset</code> — Invalidate cached responses</summary>
+<summary><code>POST /api/cache/reset</code> — Invalidate server-side cache</summary>
 
 
 ```
 POST /api/cache/reset
+X-API-Key: your-secret-key
 ```
+
+When `API_KEY` is configured, this endpoint requires the `X-API-Key` header. Without a key (or with `API_KEY` left empty), the endpoint is open.
 
 **Response** `200`
 
@@ -481,7 +487,16 @@ POST /api/cache/reset
 {"message": "Cache invalidated"}
 ```
 
-Signals downstream caches (browsers, CDNs, proxies) to purge cached API responses. Only accepts `POST`; `GET` returns 404.
+| Status | Body | Cause |
+|--------|------|-------|
+| `401` | `{"message":"unauthorized"}` | Missing or wrong `X-API-Key` |
+
+**Per-request invalidation**: Add `?invalidateCache=true` to any cached `GET` request to bypass the cache and re-fetch fresh data for that URL. When `API_KEY` is configured, the `X-API-Key` header is required.
+
+```
+GET /api/zones?invalidateCache=true
+X-API-Key: your-secret-key
+```
 
 </details>
 

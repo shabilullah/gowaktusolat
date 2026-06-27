@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/extractors"
 	"github.com/gofiber/fiber/v3/middleware/cache"
+	"github.com/gofiber/fiber/v3/middleware/keyauth"
 	"github.com/shabilullah/gowaktusolat/internal/geo"
 )
 
@@ -103,11 +105,25 @@ func (h *Zones) GetByCoordinate(c fiber.Ctx) error {
 	})
 }
 
-func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector) {
+func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector, apiKey string) {
+	configuredAPIKey = apiKey
+
 	api := app.Group("/api")
 
 	api.Use(func(c fiber.Ctx) error {
 		c.Set("Cache-Control", "public, max-age=3600")
+		return c.Next()
+	})
+
+	// Protect ?invalidateCache=true with API key when configured
+	api.Use(func(c fiber.Ctx) error {
+		if configuredAPIKey != "" && fiber.Query[bool](c, "invalidateCache") {
+			if c.Get("X-API-Key") != configuredAPIKey {
+				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+					"message": "unauthorized",
+				})
+			}
+		}
 		return c.Next()
 	})
 
@@ -152,11 +168,31 @@ func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector) {
 	api.Get("/zones/:state", zonesHandler.GetByState)
 
 	cacheHandler := &CacheHandler{}
-	api.Post("/cache/reset", cacheHandler.Reset)
+	if apiKey != "" {
+		api.Post("/cache/reset", keyauthMiddleware(apiKey), cacheHandler.Reset)
+	} else {
+		api.Post("/cache/reset", cacheHandler.Reset)
+	}
 
 	app.Use(func(c fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{
 			"message": "No route matched. Please see the API documentation.",
 		})
+	})
+}
+
+var configuredAPIKey string
+
+func keyauthMiddleware(key string) fiber.Handler {
+	return keyauth.New(keyauth.Config{
+		Extractor: extractors.FromHeader("X-API-Key"),
+		Validator: func(c fiber.Ctx, k string) (bool, error) {
+			return k == key, nil
+		},
+		ErrorHandler: func(c fiber.Ctx, err error) error {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"message": "unauthorized",
+			})
+		},
 	})
 }

@@ -93,7 +93,7 @@ func main() {
 			})
 		},
 	}))
-	api.RegisterRoutes(app, database, detector)
+	api.RegisterRoutes(app, database, detector, cfg.APIKey)
 
 	log.Printf("Server starting on port %s (prefork=%v)", cfg.Port, cfg.Prefork)
 	if err := app.Listen(":"+cfg.Port, fiber.ListenConfig{EnablePrefork: cfg.Prefork}); err != nil {
