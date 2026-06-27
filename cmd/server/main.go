@@ -4,11 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/etag"
+	"github.com/gofiber/fiber/v3/middleware/limiter"
 	_ "modernc.org/sqlite"
 
 	"github.com/shabilullah/gowaktusolat/internal/api"
@@ -65,6 +67,29 @@ func main() {
 
 	app.Use(etag.New())
 
+	app.Use(limiter.New(limiter.Config{
+		MaxFunc: func(c fiber.Ctx) int {
+			path := c.Path()
+			// PDF generation is expensive — tighter limit
+			if strings.Contains(path, "jadual_solat") {
+				return 10
+			}
+			return 60
+		},
+		ExpirationFunc: func(c fiber.Ctx) time.Duration {
+			path := c.Path()
+			if strings.Contains(path, "jadual_solat") {
+				return 2 * time.Minute
+			}
+			return 1 * time.Minute
+		},
+		LimiterMiddleware: limiter.SlidingWindow{},
+		LimitReached: func(c fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"message": "Too many requests. Please try again later.",
+			})
+		},
+	}))
 	api.RegisterRoutes(app, database, detector)
 
 	log.Printf("Server starting on port %s (prefork=%v)", cfg.Port, cfg.Prefork)
