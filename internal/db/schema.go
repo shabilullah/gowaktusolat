@@ -66,8 +66,6 @@ func seedDefaultSettings(db *sql.DB) error {
 	}
 
 	defaults := map[string]string{
-		"scraper.schedule":    "0 2 1 1 *",
-		"scraper.enabled":     "false",
 		"scraper.last_run":    "",
 		"scraper.last_status": "",
 	}

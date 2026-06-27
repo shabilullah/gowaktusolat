@@ -49,7 +49,6 @@ cp .env.example .env
 | `BASE_PATH`    | `""`                 | URL prefix (reserved)                            |
 | `CORS_ORIGINS` | `*`                  | `*` for all, or comma-separated domains |
 | `PREFORK`      | `false`              | Spawn one process per CPU core (`true`/`1`)    |
-| `API_KEY`      | `""`                 | Protects `/api/settings` when set; send as `X-API-Key` header |
 | `SEEDER_SCHED` | `""`                 | Cron schedule for auto-scheduler; omit to disable |
 
 **CORS examples:**
@@ -99,7 +98,6 @@ docker run -d \
   -v ./data:/data \
   -e CORS_ORIGINS=* \
   -e PREFORK=false \
-  -e API_KEY= \
   -e SEEDER_SCHED= \
   ghcr.io/shabilullah/gowaktusolat:master
 
@@ -164,14 +162,7 @@ GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd/scraper
    ```bash
    sudo systemctl enable --now gowaktusolat
    ```
-   Set `SEEDER_SCHED` in the unit file to enable recurring scrapes, or use the API:
-   ```bash
-   curl -X PUT http://localhost:8080/api/settings \
-     -H 'Content-Type: application/json' \
-     -H 'X-API-Key: your-secret-key' \
-     -d '{"scraper":{"enabled":true,"schedule":"0 2 1 1 *"}}'
-   ```
-   This runs the scraper at 2am on January 1st each year.
+   Set `SEEDER_SCHED` in the unit file to enable recurring scrapes. No runtime configuration is needed — the schedule is read from the environment on startup.
 
 ### Reverse proxy (nginx)
 
@@ -443,73 +434,31 @@ A4 PDF with title, zone header, and columns: Tarikh | Hijri | Imsak | Subuh | Sy
 |--------|------|-------|
 | `404` | `{"message":"No data found for zone: ..."}` | No data |
 
-### Settings
+### Last Update
 
-**Authentication**: When `API_KEY` is configured, all settings endpoints require the header `X-API-Key: <key>`. Requests without a matching key receive `401 Unauthorized`. When `API_KEY` is empty (default), no authentication is required.
-
+The scraper schedule is controlled exclusively via the `SEEDER_SCHED` environment variable — there is no runtime API to enable, disable, or change it.
 
 <details>
-<summary><code>GET /api/settings</code> — Read scraper configuration</summary>
+<summary><code>GET /api/last-update</code> — Last scraper run info</summary>
 
 
 ```
-GET /api/settings
-X-API-Key: your-secret-key
+GET /api/last-update
 ```
 
 **Response** `200`
 
 ```json
 {
-  "scraper": {
-    "enabled": false,
-    "schedule": "0 2 1 1 *",
-    "last_run": "2026-06-26T12:53:30Z",
-    "last_status": "success: 53/53 zones"
-  }
+  "last_run": "2026-06-26T12:53:30Z",
+  "last_status": "success: 53/53 zones"
 }
 ```
 
-| Field             | Type     | Description                                                              | Example                    |
-|-------------------|----------|--------------------------------------------------------------------------|----------------------------|
-| `scraper.enabled` | `bool`   | Whether the cron scheduler is active                                     | `false`                    |
-| `scraper.schedule`| `string` | Cron expression (`min hour dom month dow`)                               | `"0 2 1 1 *"`              |
-| `scraper.last_run`| `string` | ISO 8601 timestamp of last scrape, or `""` if never run                  | `"2026-06-26T12:53:30Z"`   |
-| `scraper.last_status` | `string` | Result of last scrape: `"running"`, `"success: N/N zones"`, `"partial: N/N zones (M failed)"`, or `""` | `"success: 53/53 zones"` |
-
-</details>
-
-<details>
-<summary><code>PUT /api/settings</code> — Update scraper configuration</summary>
-
-```
-PUT /api/settings
-Content-Type: application/json
-X-API-Key: your-secret-key
-
-{"scraper": {"enabled": true, "schedule": "0 2 1 1 *"}}
-```
-
-**Request body** — partial update, all fields optional:
-
-| Field | Type | Description | Example |
-|-------|------|-------------|---------|
-| `scraper.enabled` | `bool` | Enable/disable scheduled scraping | `true` |
-| `scraper.schedule` | `string` | Valid cron expression (5-field: `min hour dom month dow`) | `"0 2 1 1 *"` |
-
-`last_run` and `last_status` are **read-only** — setting them is silently ignored (not an error).
-
-**Response** `200` — full settings object (same field table as GET above)
-
-**Errors**
-
-| Status | Body | Cause |
-|--------|------|-------|
-| `401` | `{"message":"unauthorized"}` | Missing or wrong `X-API-Key` header |
-| `400` | `{"message":"Invalid cron expression"}` | Bad cron syntax |
-| `400` | `{"message":"Unknown key: xyz"}` | Unrecognized top-level key |
-| `400` | `{"message":"Unknown scraper key: xyz"}` | Unrecognized key inside `scraper` |
-| `400` | `{"message":"Invalid JSON"}` | Malformed body |
+| Field         | Type     | Description                                                              | Example                    |
+|---------------|----------|--------------------------------------------------------------------------|----------------------------|
+| `last_run`    | `string` | ISO 8601 timestamp of last scrape, or `""` if never run                  | `"2026-06-26T12:53:30Z"`   |
+| `last_status` | `string` | Result of last scrape: `"running"`, `"success: N/N zones"`, `"partial: N/N zones (M failed)"`, or `""` | `"success: 53/53 zones"` |
 
 </details>
 

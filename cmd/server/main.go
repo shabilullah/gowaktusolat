@@ -30,21 +30,15 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	// Override scheduler settings from SEEDER_SCHED env var.
+	// SEEDER_SCHED env var controls the cron schedule for auto-scraping.
+	// When set, the scheduler runs with the given schedule.
+	// When empty, no scheduled scraping occurs.
+	sched := scraper.NewScheduler(database, cfg.SeederSched)
 	if cfg.SeederSched != "" {
-		if _, err := database.Exec(
-			"INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('scraper.schedule', ?, datetime('now'))",
-			cfg.SeederSched,
-		); err != nil {
-			log.Printf("Failed to set scraper.schedule: %v", err)
-		}
-		if _, err := database.Exec(
-			"INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('scraper.enabled', 'true', datetime('now'))",
-		); err != nil {
-			log.Printf("Failed to set scraper.enabled: %v", err)
-		}
-		log.Printf("SEEDER_SCHED set — auto-scraping enabled with schedule: %s", cfg.SeederSched)
+		log.Printf("Auto-scraping enabled with schedule: %s", cfg.SeederSched)
 	}
+	sched.Start()
+	defer sched.Stop()
 
 	detector, err := geo.NewDetector(database)
 	if err != nil {
@@ -60,10 +54,6 @@ func main() {
 		go scraper.RunFullScrape(context.Background(), database, time.Now().Year())
 	}
 
-	sched := scraper.NewScheduler(database)
-	sched.Start()
-	defer sched.Stop()
-
 	app := fiber.New(fiber.Config{
 		AppName: "Go Waktu Solat API",
 	})
@@ -72,7 +62,7 @@ func main() {
 		AllowOrigins: cfg.CORSOriginsSlice(),
 	}))
 
-	api.RegisterRoutes(app, database, detector, cfg)
+	api.RegisterRoutes(app, database, detector)
 
 	log.Printf("Server starting on port %s (prefork=%v)", cfg.Port, cfg.Prefork)
 	if err := app.Listen(":"+cfg.Port, fiber.ListenConfig{EnablePrefork: cfg.Prefork}); err != nil {

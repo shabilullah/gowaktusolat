@@ -6,7 +6,6 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       - PORT=8080
-      - API_KEY=                         # protects /api/settings; omit for no auth
       - SEEDER_SCHED=                    # cron schedule for auto-scraping; omit to disable
       - DB_PATH=/data/waktusolat.db
       - CORS_ORIGINS=*                    # comma-separated, "*" for all

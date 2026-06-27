@@ -13,7 +13,6 @@ type Config struct {
 	BasePath    string
 	CORSOrigins string
 	Prefork     bool
-	APIKey      string
 	SeederSched string
 }
 
@@ -25,13 +24,9 @@ func Load() *Config {
 		BasePath:    envOrDefault("BASE_PATH", ""),
 		CORSOrigins: envOrDefault("CORS_ORIGINS", "*"),
 		Prefork:     envBool("PREFORK", false),
-		APIKey:      os.Getenv("API_KEY"),
 		SeederSched: os.Getenv("SEEDER_SCHED"),
 	}
 }
-
-// GetAuthKey returns the configured API key, or empty string when no key is set.
-func (c *Config) GetAuthKey() string { return c.APIKey }
 
 // CORSOriginsSlice returns CORS origins as a string slice for gofiber v3.
 func (c *Config) CORSOriginsSlice() []string {

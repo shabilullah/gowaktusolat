@@ -100,27 +100,15 @@ func (h *Zones) GetByCoordinate(c fiber.Ctx) error {
 	})
 }
 
-func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector, cfg interface{}) {
-	var apiKey string
-	if k, ok := cfg.(interface{ GetAuthKey() string }); ok {
-		apiKey = k.GetAuthKey()
-	}
-
+func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector) {
 	api := app.Group("/api")
 	api.Use(func(c fiber.Ctx) error {
 		c.Set("Cache-Control", "public, max-age=3600")
 		return c.Next()
 	})
 
-	settingsHandler := &Settings{DB: database}
-	if apiKey != "" {
-		mw := authMiddleware(apiKey)
-		api.Get("/settings", mw, settingsHandler.Get)
-		api.Put("/settings", mw, settingsHandler.Put)
-	} else {
-		api.Get("/settings", settingsHandler.Get)
-		api.Put("/settings", settingsHandler.Put)
-	}
+	lastUpdateHandler := &LastUpdate{DB: database}
+	api.Get("/last-update", lastUpdateHandler.Get)
 
 	prayerHandler := &PrayerTime{DB: database, Detector: detector}
 	api.Get("/solat/:zone", prayerHandler.FetchMonth)
@@ -140,13 +128,4 @@ func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector, cf
 			"message": "No route matched. Please see the API documentation.",
 		})
 	})
-}
-
-func authMiddleware(key string) fiber.Handler {
-	return func(c fiber.Ctx) error {
-		if c.Get("X-API-Key") != key {
-			return c.Status(401).JSON(fiber.Map{"message": "unauthorized"})
-		}
-		return c.Next()
-	}
 }

@@ -49,16 +49,13 @@ sleep 3
 # Core endpoints
 curl -s http://localhost:8080/api/zones | head -c 200
 curl -s "http://localhost:8080/api/solat/SGR01?month=6&year=2026" | head -c 200
-curl -s http://localhost:8080/api/settings | head -c 200
+curl -s http://localhost:8080/api/last-update | head -c 200
 
 # GPS detection
 curl -s http://localhost:8080/api/zones/3.068498/101.630263
 
 # Error paths
 curl -s "http://localhost:8080/api/solat/XXXXX?month=6&year=2026"
-curl -s -X PUT http://localhost:8080/api/settings \
-  -H 'Content-Type: application/json' \
-  -d '{"scraper":{"schedule":"bad"}}'
 
 kill %1
 ```
