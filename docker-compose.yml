@@ -6,6 +6,7 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       - PORT=8080
+      - API_KEY=                         # protects /api/settings; omit for no auth
       - DB_PATH=/data/waktusolat.db
       - CORS_ORIGINS=*                    # comma-separated, "*" for all
       - PREFORK=false                     # spawn one process per CPU core

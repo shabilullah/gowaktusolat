@@ -159,3 +159,68 @@ func TestSettingsPutUnknownKey(t *testing.T) {
 		t.Errorf("status = %d, want 400", resp.StatusCode)
 	}
 }
+
+func TestSettingsAuthMissingKey(t *testing.T) {
+	db := setupSettingsTestDB(t)
+	defer db.Close()
+
+	handler := &Settings{DB: db}
+
+	app := fiber.New()
+	app.Use(authMiddleware("secret"))
+	app.Get("/api/settings", handler.Get)
+
+	req := httptest.NewRequest("GET", "/api/settings", nil)
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+
+	if resp.StatusCode != 401 {
+		t.Errorf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestSettingsAuthWrongKey(t *testing.T) {
+	db := setupSettingsTestDB(t)
+	defer db.Close()
+
+	handler := &Settings{DB: db}
+
+	app := fiber.New()
+	app.Use(authMiddleware("secret"))
+	app.Get("/api/settings", handler.Get)
+
+	req := httptest.NewRequest("GET", "/api/settings", nil)
+	req.Header.Set("X-API-Key", "wrong")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+
+	if resp.StatusCode != 401 {
+		t.Errorf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+func TestSettingsAuthCorrectKey(t *testing.T) {
+	db := setupSettingsTestDB(t)
+	defer db.Close()
+
+	handler := &Settings{DB: db}
+
+	app := fiber.New()
+	app.Use(authMiddleware("secret"))
+	app.Get("/api/settings", handler.Get)
+
+	req := httptest.NewRequest("GET", "/api/settings", nil)
+	req.Header.Set("X-API-Key", "secret")
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+
+	if resp.StatusCode != 200 {
+		t.Errorf("status = %d, want 200", resp.StatusCode)
+	}
+}

@@ -13,10 +13,10 @@ type Config struct {
 	BasePath    string
 	CORSOrigins string
 	Prefork     bool
+	APIKey      string
 }
 
 func Load() *Config {
-	// .env is optional — ignore error if missing
 	_ = godotenv.Load()
 	return &Config{
 		DBPath:      envOrDefault("DB_PATH", "data/waktusolat.db"),
@@ -24,8 +24,12 @@ func Load() *Config {
 		BasePath:    envOrDefault("BASE_PATH", ""),
 		CORSOrigins: envOrDefault("CORS_ORIGINS", "*"),
 		Prefork:     envBool("PREFORK", false),
+		APIKey:      os.Getenv("API_KEY"),
 	}
 }
+
+// GetAuthKey returns the configured API key, or empty string when no key is set.
+func (c *Config) GetAuthKey() string { return c.APIKey }
 
 // CORSOriginsSlice returns CORS origins as a string slice for gofiber v3.
 func (c *Config) CORSOriginsSlice() []string {

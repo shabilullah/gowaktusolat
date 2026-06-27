@@ -101,13 +101,15 @@ func (h *Zones) GetByCoordinate(c fiber.Ctx) error {
 }
 
 func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector, cfg interface{}) {
-	basePath := ""
-	if c, ok := cfg.(interface{ BasePath() string }); ok {
-		basePath = c.BasePath()
+	var apiKey string
+	if k, ok := cfg.(interface{ GetAuthKey() string }); ok {
+		apiKey = k.GetAuthKey()
 	}
-	_ = basePath
 
 	settingsGroup := app.Group("/api")
+	if apiKey != "" {
+		settingsGroup.Use(authMiddleware(apiKey))
+	}
 
 	settingsHandler := &Settings{DB: database}
 	settingsGroup.Get("/settings", settingsHandler.Get)
@@ -137,4 +139,13 @@ func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector, cf
 			"message": "No route matched. Please see the API documentation.",
 		})
 	})
+}
+
+func authMiddleware(key string) fiber.Handler {
+	return func(c fiber.Ctx) error {
+		if c.Get("X-API-Key") != key {
+			return c.Status(401).JSON(fiber.Map{"message": "unauthorized"})
+		}
+		return c.Next()
+	}
 }
