@@ -12,6 +12,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/cors"
 	"github.com/gofiber/fiber/v3/middleware/etag"
 	"github.com/gofiber/fiber/v3/middleware/limiter"
+	"github.com/gofiber/fiber/v3/middleware/recover"
 	_ "modernc.org/sqlite"
 
 	"github.com/shabilullah/gowaktusolat/internal/api"
@@ -64,6 +65,7 @@ func main() {
 		JSONDecoder: json.Unmarshal,
 	})
 
+	app.Use(recover.New())
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: cfg.CORSOriginsSlice(),
 	}))
