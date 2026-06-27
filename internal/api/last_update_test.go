@@ -1,31 +1,37 @@
 package api
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gofiber/fiber/v3"
-	_ "modernc.org/sqlite"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
-func setupLastUpdateTestDB(t *testing.T) *sql.DB {
+func setupLastUpdateTestDB(t *testing.T) *sqlitex.Pool {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
+	pool, err := sqlitex.NewPool("file::memory:?cache=shared", sqlitex.PoolOptions{
+		Flags:    sqlite.OpenReadWrite | sqlite.OpenCreate | sqlite.OpenWAL | sqlite.OpenURI,
+		PoolSize: 1,
+	})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		t.Fatalf("wal: %v", err)
+	conn, err := pool.Take(context.Background())
+	if err != nil {
+		t.Fatalf("take: %v", err)
 	}
+	defer pool.Put(conn)
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS settings (
+	if err := sqlitex.Exec(conn, `CREATE TABLE IF NOT EXISTS settings (
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL,
 		updated_at TEXT NOT NULL
-	)`); err != nil {
+	)`, nil); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 
@@ -34,19 +40,21 @@ func setupLastUpdateTestDB(t *testing.T) *sql.DB {
 		"scraper.last_status": "success: 53/53 zones",
 	}
 	for k, v := range defaults {
-		if _, err := db.Exec("INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))", k, v); err != nil {
+		if err := sqlitex.Execute(conn, "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))", &sqlitex.ExecOptions{
+			Args: []interface{}{k, v},
+		}); err != nil {
 			t.Fatalf("seed %s: %v", k, err)
 		}
 	}
 
-	return db
+	return pool
 }
 
 func TestLastUpdateGet(t *testing.T) {
-	db := setupLastUpdateTestDB(t)
-	defer db.Close()
+	pool := setupLastUpdateTestDB(t)
+	defer pool.Close()
 
-	handler := &LastUpdate{DB: db}
+	handler := &LastUpdate{DB: pool}
 
 	app := fiber.New()
 	app.Get("/api/last-update", handler.Get)
@@ -75,24 +83,31 @@ func TestLastUpdateGet(t *testing.T) {
 }
 
 func TestLastUpdateGetEmpty(t *testing.T) {
-	db, err := sql.Open("sqlite", ":memory:")
+	pool, err := sqlitex.NewPool("file::memory:?cache=shared", sqlitex.PoolOptions{
+		Flags:    sqlite.OpenReadWrite | sqlite.OpenCreate | sqlite.OpenWAL | sqlite.OpenURI,
+		PoolSize: 1,
+	})
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	defer db.Close()
+	defer pool.Close()
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		t.Fatalf("wal: %v", err)
+	conn, err := pool.Take(context.Background())
+	if err != nil {
+		t.Fatalf("take: %v", err)
 	}
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS settings (
+
+	if err := sqlitex.Exec(conn, `CREATE TABLE IF NOT EXISTS settings (
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL,
 		updated_at TEXT NOT NULL
-	)`); err != nil {
+	)`, nil); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 
-	handler := &LastUpdate{DB: db}
+	pool.Put(conn)
+
+	handler := &LastUpdate{DB: pool}
 
 	app := fiber.New()
 	app.Get("/api/last-update", handler.Get)

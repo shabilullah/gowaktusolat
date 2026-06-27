@@ -1,17 +1,19 @@
 package api
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/shabilullah/gowaktusolat/internal/db"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 type JadualSolat struct {
-	DB *sql.DB
+	Pool *sqlitex.Pool
 }
 
 func (h *JadualSolat) FetchMonth(c fiber.Ctx) error {
@@ -27,17 +29,18 @@ func (h *JadualSolat) FetchMonth(c fiber.Ctx) error {
 }
 
 func (h *JadualSolat) fetchSingleMonth(c fiber.Ctx, zone string, year, month int) error {
-	rows, err := db.QueryPrayerTimes(h.DB, zone, year, month)
-	if err == sql.ErrNoRows {
+
+	rows, err := db.QueryPrayerTimes(h.Pool, c.Context(), zone, year, month)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+	}
+	if len(rows) == 0 {
 		return c.Status(404).JSON(fiber.Map{
 			"message": fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
 		})
 	}
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
-	}
 
-	daerah := lookupDaerah(h.DB, zone)
+	daerah := lookupDaerah(h.Pool, zone)
 	content := generatePageContent(zone, daerah, year, month, rows)
 	pdf := buildSinglePagePDF(content)
 
@@ -47,12 +50,13 @@ func (h *JadualSolat) fetchSingleMonth(c fiber.Ctx, zone string, year, month int
 }
 
 func (h *JadualSolat) fetchYear(c fiber.Ctx, zone string, year int) error {
+
 	var contents []string
-	daerah := lookupDaerah(h.DB, zone)
+	daerah := lookupDaerah(h.Pool, zone)
 
 	for month := 1; month <= 12; month++ {
-		rows, err := db.QueryPrayerTimes(h.DB, zone, year, month)
-		if err != nil && err != sql.ErrNoRows {
+		rows, err := db.QueryPrayerTimes(h.Pool, c.Context(), zone, year, month)
+		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"message": err.Error()})
 		}
 		contents = append(contents, generatePageContent(zone, daerah, year, month, rows))
@@ -65,11 +69,23 @@ func (h *JadualSolat) fetchYear(c fiber.Ctx, zone string, year int) error {
 	return c.Send(pdf)
 }
 
-func lookupDaerah(db *sql.DB, zone string) string {
+func lookupDaerah(pool *sqlitex.Pool, zone string) string {
+	conn, err := pool.Take(context.Background())
+	if err != nil {
+		return ""
+	}
+	defer pool.Put(conn)
+
 	var daerah string
-	if err := db.QueryRow(
-		"SELECT daerah FROM prayer_zones WHERE jakim_code = ?", zone,
-	).Scan(&daerah); err != nil {
+	if err := sqlitex.ExecuteTransient(conn,
+		"SELECT daerah FROM prayer_zones WHERE jakim_code = ?",
+		&sqlitex.ExecOptions{
+			Args: []interface{}{zone},
+			ResultFunc: func(stmt *sqlite.Stmt) error {
+				daerah = stmt.ColumnText(0)
+				return nil
+			},
+		}); err != nil {
 		return ""
 	}
 	return daerah

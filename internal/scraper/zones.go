@@ -1,10 +1,12 @@
 package scraper
 
 import (
-	"database/sql"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
+
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 //go:embed zones_data.json
@@ -24,16 +26,22 @@ func LoadZones() ([]Zone, error) {
 	return zones, nil
 }
 
-func SeedZones(db *sql.DB) error {
+func SeedZones(pool *sqlitex.Pool) error {
+	conn, err := pool.Take(context.Background())
+	if err != nil {
+		return fmt.Errorf("take conn: %w", err)
+	}
+	defer pool.Put(conn)
+
 	zones, err := LoadZones()
 	if err != nil {
 		return err
 	}
 
 	for _, z := range zones {
-		if _, err := db.Exec(
+		if err := sqlitex.Exec(conn,
 			"INSERT OR REPLACE INTO prayer_zones (jakim_code, negeri, daerah) VALUES (?, ?, ?)",
-			z.JakimCode, z.Negeri, z.Daerah,
+			nil, z.JakimCode, z.Negeri, z.Daerah,
 		); err != nil {
 			return fmt.Errorf("seed zone %s: %w", z.JakimCode, err)
 		}

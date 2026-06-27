@@ -1,31 +1,31 @@
 package api
 
 import (
-	"database/sql"
 	"strconv"
 	"strings"
-
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/extractors"
 	"github.com/gofiber/fiber/v3/middleware/cache"
 	"github.com/gofiber/fiber/v3/middleware/keyauth"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
+
 	"github.com/shabilullah/gowaktusolat/internal/geo"
 )
 
 type Zones struct {
-	DB       *sql.DB
+	DB       *sqlitex.Pool
 	Detector *geo.Detector
 }
 
 func (h *Zones) Index(c fiber.Ctx) error {
-	rows, err := h.DB.Query("SELECT jakim_code, negeri, daerah FROM prayer_zones ORDER BY jakim_code")
+	conn, err := h.DB.Take(c.Context())
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
 	}
-	defer rows.Close()
-
+	defer h.DB.Put(conn)
 	type zoneResult struct {
 		JakimCode string `json:"jakimCode"`
 		Negeri    string `json:"negeri"`
@@ -33,14 +33,20 @@ func (h *Zones) Index(c fiber.Ctx) error {
 	}
 
 	var zones []zoneResult
-	for rows.Next() {
-		var z zoneResult
-		if err := rows.Scan(&z.JakimCode, &z.Negeri, &z.Daerah); err != nil {
-			return c.Status(500).JSON(fiber.Map{"message": err.Error()})
-		}
-		zones = append(zones, z)
-	}
-	if err := rows.Err(); err != nil {
+	if err := sqlitex.ExecuteTransient(
+		conn,
+		"SELECT jakim_code, negeri, daerah FROM prayer_zones ORDER BY jakim_code",
+		&sqlitex.ExecOptions{
+			ResultFunc: func(stmt *sqlite.Stmt) error {
+				zones = append(zones, zoneResult{
+					JakimCode: stmt.ColumnText(0),
+					Negeri:    stmt.ColumnText(1),
+					Daerah:    stmt.ColumnText(2),
+				})
+				return nil
+			},
+		},
+	); err != nil {
 		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
 	}
 
@@ -48,16 +54,12 @@ func (h *Zones) Index(c fiber.Ctx) error {
 }
 
 func (h *Zones) GetByState(c fiber.Ctx) error {
-	state := strings.ToUpper(c.Params("state"))
-
-	rows, err := h.DB.Query(
-		"SELECT jakim_code, negeri, daerah FROM prayer_zones WHERE UPPER(jakim_code) LIKE ? ORDER BY jakim_code",
-		state+"%",
-	)
+	conn, err := h.DB.Take(c.Context())
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
 	}
-	defer rows.Close()
+	defer h.DB.Put(conn)
+	state := strings.ToUpper(c.Params("state"))
 
 	type zoneResult struct {
 		JakimCode string `json:"jakimCode"`
@@ -66,14 +68,21 @@ func (h *Zones) GetByState(c fiber.Ctx) error {
 	}
 
 	var zones []zoneResult
-	for rows.Next() {
-		var z zoneResult
-		if err := rows.Scan(&z.JakimCode, &z.Negeri, &z.Daerah); err != nil {
-			return c.Status(500).JSON(fiber.Map{"message": err.Error()})
-		}
-		zones = append(zones, z)
-	}
-	if err := rows.Err(); err != nil {
+	if err := sqlitex.ExecuteTransient(
+		conn,
+		"SELECT jakim_code, negeri, daerah FROM prayer_zones WHERE UPPER(jakim_code) LIKE ? ORDER BY jakim_code",
+		&sqlitex.ExecOptions{
+			Args: []interface{}{state + "%"},
+			ResultFunc: func(stmt *sqlite.Stmt) error {
+				zones = append(zones, zoneResult{
+					JakimCode: stmt.ColumnText(0),
+					Negeri:    stmt.ColumnText(1),
+					Daerah:    stmt.ColumnText(2),
+				})
+				return nil
+			},
+		},
+	); err != nil {
 		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
 	}
 
@@ -105,7 +114,7 @@ func (h *Zones) GetByCoordinate(c fiber.Ctx) error {
 	})
 }
 
-func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector, apiKey string) {
+func RegisterRoutes(app *fiber.App, database *sqlitex.Pool, detector *geo.Detector, apiKey string) {
 	configuredAPIKey = apiKey
 
 	api := app.Group("/api")
@@ -154,7 +163,7 @@ func RegisterRoutes(app *fiber.App, database *sql.DB, detector *geo.Detector, ap
 	lastUpdateHandler := &LastUpdate{DB: database}
 	api.Get("/last-update", lastUpdateHandler.Get)
 
-	jadualHandler := &JadualSolat{DB: database}
+	jadualHandler := &JadualSolat{Pool: database}
 	api.Get("/jadual_solat/:zone", jadualHandler.FetchMonth)
 
 	prayerHandler := &PrayerTime{DB: database, Detector: detector}

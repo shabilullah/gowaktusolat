@@ -1,9 +1,20 @@
 package db
 
-import "database/sql"
+import (
+	"context"
 
-func InitDB(db *sql.DB) error {
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
+)
+
+func InitPool(pool *sqlitex.Pool) error {
+	conn, err := pool.Take(context.Background())
+	if err != nil {
+		return err
+	}
+	defer pool.Put(conn)
+
+	if err := sqlitex.Exec(conn, "PRAGMA journal_mode=WAL", nil); err != nil {
 		return err
 	}
 
@@ -48,17 +59,22 @@ func InitDB(db *sql.DB) error {
 	}
 
 	for _, stmt := range statements {
-		if _, err := db.Exec(stmt); err != nil {
+		if err := sqlitex.Exec(conn, stmt, nil); err != nil {
 			return err
 		}
 	}
 
-	return seedDefaultSettings(db)
+	return seedDefaultSettings(conn)
 }
 
-func seedDefaultSettings(db *sql.DB) error {
+func seedDefaultSettings(conn *sqlite.Conn) error {
 	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM settings").Scan(&count); err != nil {
+	if err := sqlitex.Execute(conn, "SELECT COUNT(*) FROM settings", &sqlitex.ExecOptions{
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			count = stmt.ColumnInt(0)
+			return nil
+		},
+	}); err != nil {
 		return err
 	}
 	if count > 0 {
@@ -71,8 +87,9 @@ func seedDefaultSettings(db *sql.DB) error {
 	}
 
 	for k, v := range defaults {
-		if _, err := db.Exec(
+		if err := sqlitex.Exec(conn,
 			"INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
+			nil,
 			k, v,
 		); err != nil {
 			return err

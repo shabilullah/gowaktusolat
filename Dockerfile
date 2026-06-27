@@ -1,12 +1,11 @@
 # Stage 1: Build
 FROM golang:1.26-alpine AS builder
-
+RUN apk add --no-cache gcc musl-dev
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /server ./cmd/server
+RUN CGO_ENABLED=1 go build -ldflags="-s -w" -o /server ./cmd/server
 
 # Stage 2: Runtime
 FROM alpine:3.21

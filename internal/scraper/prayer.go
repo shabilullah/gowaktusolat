@@ -1,13 +1,14 @@
 package scraper
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
 	json "github.com/goccy/go-json"
 	"github.com/gofiber/fiber/v3/client"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 var malayMonths = map[string]string{
@@ -123,7 +124,13 @@ func parseDate(malayDate string) string {
 	return t.Format("2006-01-02")
 }
 
-func SavePrayerTimes(db *sql.DB, zoneCode string, year int, times []PrayerTime) error {
+func SavePrayerTimes(pool *sqlitex.Pool, zoneCode string, year int, times []PrayerTime) error {
+	conn, err := pool.Take(context.Background())
+	if err != nil {
+		return fmt.Errorf("take conn: %w", err)
+	}
+	defer pool.Put(conn)
+
 	const batchSize = 500
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -134,17 +141,32 @@ func SavePrayerTimes(db *sql.DB, zoneCode string, year int, times []PrayerTime) 
 		}
 		batch := times[i:end]
 
-		stmt := `INSERT OR REPLACE INTO prayer_times
+		stmt, err := conn.Prepare(`INSERT OR REPLACE INTO prayer_times
 			(date, location_code, hijri, imsak, fajr, syuruk, dhuha, dhuhr, asr, maghrib, isha, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+		if err != nil {
+			return fmt.Errorf("prepare: %w", err)
+		}
 		for _, pt := range batch {
-			if _, err := db.Exec(stmt,
-				pt.Date, pt.LocationCode, pt.Hijri,
-				pt.Imsak, pt.Fajr, pt.Syuruk, pt.Dhuha,
-				pt.Dhuhr, pt.Asr, pt.Maghrib, pt.Isha,
-				now, now,
-			); err != nil {
+			stmt.BindText(1, pt.Date)
+			stmt.BindText(2, pt.LocationCode)
+			stmt.BindText(3, pt.Hijri)
+			stmt.BindText(4, pt.Imsak)
+			stmt.BindText(5, pt.Fajr)
+			stmt.BindText(6, pt.Syuruk)
+			stmt.BindText(7, pt.Dhuha)
+			stmt.BindText(8, pt.Dhuhr)
+			stmt.BindText(9, pt.Asr)
+			stmt.BindText(10, pt.Maghrib)
+			stmt.BindText(11, pt.Isha)
+			stmt.BindText(12, now)
+			stmt.BindText(13, now)
+			if _, err := stmt.Step(); err != nil {
+				stmt.Reset()
 				return fmt.Errorf("save prayer time %s/%s: %w", zoneCode, pt.Date, err)
+			}
+			if err := stmt.Reset(); err != nil {
+				return fmt.Errorf("reset: %w", err)
 			}
 		}
 	}

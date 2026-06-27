@@ -1,7 +1,6 @@
 package api
 
 import (
-	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,10 +9,11 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/shabilullah/gowaktusolat/internal/db"
 	"github.com/shabilullah/gowaktusolat/internal/geo"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 type PrayerTime struct {
-	DB       *sql.DB
+	DB       *sqlitex.Pool
 	Detector *geo.Detector
 	BasePath string
 }
@@ -22,8 +22,8 @@ func (h *PrayerTime) FetchMonth(c fiber.Ctx) error {
 	zone := c.Params("zone")
 	year, month := parseYearMonth(c)
 
-	rows, err := db.QueryPrayerTimes(h.DB, zone, year, month)
-	if err == sql.ErrNoRows {
+	rows, err := db.QueryPrayerTimes(h.DB, c.Context(), zone, year, month)
+	if err == db.ErrNoRows {
 		return c.Status(404).JSON(fiber.Map{
 			"message": fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
 		})
@@ -58,8 +58,8 @@ func (h *PrayerTime) FetchDay(c fiber.Ctx) error {
 
 	year, month := parseYearMonth(c)
 
-	rows, err := db.QueryPrayerTimes(h.DB, zone, year, month)
-	if err == sql.ErrNoRows {
+	rows, err := db.QueryPrayerTimes(h.DB, c.Context(), zone, year, month)
+	if err == db.ErrNoRows {
 		return c.Status(404).JSON(fiber.Map{
 			"message": fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
 		})
@@ -104,8 +104,8 @@ func (h *PrayerTime) FetchMonthByGPS(c fiber.Ctx) error {
 	zone := result.Zone
 	year, month := parseYearMonth(c)
 
-	rows, err := db.QueryPrayerTimes(h.DB, zone, year, month)
-	if err == sql.ErrNoRows {
+	rows, err := db.QueryPrayerTimes(h.DB, c.Context(), zone, year, month)
+	if err == db.ErrNoRows {
 		return c.Status(404).JSON(fiber.Map{
 			"message": fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
 		})

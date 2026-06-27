@@ -2,23 +2,23 @@ package scraper
 
 import (
 	"context"
-	"database/sql"
 	"log"
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 type Scheduler struct {
-	db       *sql.DB
+	pool     *sqlitex.Pool
 	cron     *cron.Cron
 	schedule string
 	stop     chan struct{}
 }
 
-func NewScheduler(db *sql.DB, schedule string) *Scheduler {
+func NewScheduler(pool *sqlitex.Pool, schedule string) *Scheduler {
 	return &Scheduler{
-		db:       db,
+		pool:     pool,
 		cron:     cron.New(),
 		schedule: schedule,
 		stop:     make(chan struct{}),
@@ -34,7 +34,7 @@ func (s *Scheduler) Start() {
 	_, err := s.cron.AddFunc(s.schedule, func() {
 		now := time.Now()
 		log.Printf("[scheduler] Triggered at %s, scraping year %d", now.Format(time.RFC3339), now.Year())
-		RunFullScrape(context.Background(), s.db, now.Year())
+		RunFullScrape(context.Background(), s.pool, now.Year())
 	})
 	if err != nil {
 		log.Printf("[scheduler] Failed to add cron job: %v", err)

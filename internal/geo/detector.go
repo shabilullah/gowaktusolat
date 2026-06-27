@@ -1,13 +1,16 @@
 package geo
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"sync"
+
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 type ZoneResult struct {
@@ -30,41 +33,48 @@ type zonePolygon struct {
 	vertices [][2]float64
 	bbox     [4]float64
 }
-
 type Detector struct {
+	pool     *sqlitex.Pool
 	polygons []zonePolygon
 	mu       sync.RWMutex
 }
 
-func NewDetector(database *sql.DB) (*Detector, error) {
-	d := &Detector{}
-	if err := d.load(database); err != nil {
+func NewDetector(pool *sqlitex.Pool) (*Detector, error) {
+	d := &Detector{pool: pool}
+	if err := d.load(); err != nil {
 		return nil, fmt.Errorf("load detector: %w", err)
 	}
 	return d, nil
 }
 
-func (d *Detector) load(database *sql.DB) error {
-	rows, err := database.Query("SELECT jakim_code, state, name, polygon FROM zone_polygons")
+func (d *Detector) load() error {
+	conn, err := d.pool.Take(context.Background())
+	if err != nil {
+		return fmt.Errorf("take conn: %w", err)
+	}
+	defer d.pool.Put(conn)
+
+	var records []polygonRecord
+	err = sqlitex.Execute(conn, "SELECT jakim_code, state, name, polygon FROM zone_polygons", &sqlitex.ExecOptions{
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			records = append(records, polygonRecord{
+				JakimCode: stmt.ColumnText(0),
+				State:     stmt.ColumnText(1),
+				Name:      stmt.ColumnText(2),
+				Polygon:   stmt.ColumnText(3),
+			})
+			return nil
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("query zone_polygons: %w", err)
 	}
-	defer rows.Close()
-
-	var records []polygonRecord
-	for rows.Next() {
-		var r polygonRecord
-		if err := rows.Scan(&r.JakimCode, &r.State, &r.Name, &r.Polygon); err != nil {
-			return fmt.Errorf("scan polygon: %w", err)
-		}
-		records = append(records, r)
-	}
 
 	if len(records) == 0 {
-		if err := d.seedFromGeoJSON(database); err != nil {
+		if err := d.seedFromGeoJSON(); err != nil {
 			return fmt.Errorf("seed polygons: %w", err)
 		}
-		return d.load(database)
+		return d.load()
 	}
 
 	for _, r := range records {
@@ -77,8 +87,13 @@ func (d *Detector) load(database *sql.DB) error {
 
 	return nil
 }
+func (d *Detector) seedFromGeoJSON() error {
+	conn, err := d.pool.Take(context.Background())
+	if err != nil {
+		return fmt.Errorf("take conn: %w", err)
+	}
+	defer d.pool.Put(conn)
 
-func (d *Detector) seedFromGeoJSON(database *sql.DB) error {
 	url := "https://raw.githubusercontent.com/mptwaktusolat/jakim.geojson/refs/heads/master/malaysia.district-jakim.geojson"
 	resp, err := http.Get(url)
 	if err != nil {
@@ -110,11 +125,9 @@ func (d *Detector) seedFromGeoJSON(database *sql.DB) error {
 		return fmt.Errorf("unmarshal GeoJSON: %w", err)
 	}
 
-	tx, err := database.Begin()
-	if err != nil {
+	if err := sqlitex.Exec(conn, "BEGIN IMMEDIATE", nil); err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
 
 	for _, feat := range fc.Features {
 		polygonJSON, err := json.Marshal(feat.Geometry)
@@ -124,22 +137,23 @@ func (d *Detector) seedFromGeoJSON(database *sql.DB) error {
 
 		stringID := fmt.Sprintf("%s/%s", feat.Properties.JakimCode, feat.Properties.Name)
 
-		_, err = tx.Exec(
+		if err := sqlitex.Exec(conn,
 			`INSERT OR REPLACE INTO zone_polygons (string_id, name, code_state, state, jakim_code, polygon)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
+			nil,
 			stringID,
 			feat.Properties.Name,
 			int(feat.Properties.CodeState),
 			feat.Properties.State,
 			feat.Properties.JakimCode,
 			string(polygonJSON),
-		)
-		if err != nil {
+		); err != nil {
+			sqlitex.Exec(conn, "ROLLBACK", nil)
 			return fmt.Errorf("insert polygon: %w", err)
 		}
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := sqlitex.Exec(conn, "COMMIT", nil); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
 

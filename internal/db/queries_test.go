@@ -1,25 +1,35 @@
 package db
 
 import (
-	"database/sql"
+	"context"
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
-func setupQueryTestDB(t *testing.T) *sql.DB {
+func setupQueryTestDB(t *testing.T) *sqlitex.Pool {
 	t.Helper()
-	db, err := sql.Open("sqlite", ":memory:")
+	pool, err := sqlitex.NewPool("file::memory:?cache=shared", sqlitex.PoolOptions{
+		Flags:    sqlite.OpenReadWrite | sqlite.OpenCreate | sqlite.OpenWAL | sqlite.OpenURI,
+		PoolSize: 1,
+	})
 	if err != nil {
-		t.Fatalf("open db: %v", err)
+		t.Fatalf("open pool: %v", err)
 	}
 
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+	conn, err := pool.Take(context.Background())
+	if err != nil {
+		t.Fatalf("take conn: %v", err)
+	}
+	defer pool.Put(conn)
+
+	if err := sqlitex.Exec(conn, "PRAGMA journal_mode=WAL", nil); err != nil {
 		t.Fatalf("wal: %v", err)
 	}
 
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS prayer_times (
+	if err := sqlitex.Exec(conn, `CREATE TABLE IF NOT EXISTS prayer_times (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		date TEXT NOT NULL,
 		location_code TEXT NOT NULL,
@@ -34,11 +44,11 @@ func setupQueryTestDB(t *testing.T) *sql.DB {
 		isha TEXT,
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
-	)`); err != nil {
+	)`, nil); err != nil {
 		t.Fatalf("create table: %v", err)
 	}
 
-	if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_prayer_times_zone_date ON prayer_times(location_code, date)`); err != nil {
+	if err := sqlitex.Exec(conn, `CREATE UNIQUE INDEX IF NOT EXISTS idx_prayer_times_zone_date ON prayer_times(location_code, date)`, nil); err != nil {
 		t.Fatalf("create index: %v", err)
 	}
 
@@ -57,25 +67,24 @@ func setupQueryTestDB(t *testing.T) *sql.DB {
 	}
 
 	for _, d := range testData {
-		if _, err := db.Exec(
+		if err := sqlitex.Exec(conn,
 			`INSERT INTO prayer_times (date, location_code, hijri, imsak, fajr, syuruk, dhuha, dhuhr, asr, maghrib, isha, created_at, updated_at)
 			 VALUES (?, ?, '', '', ?, '', '', ?, ?, ?, ?, ?, ?)`,
-			d.date, d.zone,
-			d.fajr, d.dhuhr, d.asr, d.maghrib, d.isha,
-			now, now,
+			nil,
+			d.date, d.zone, d.fajr, d.dhuhr, d.asr, d.maghrib, d.isha, now, now,
 		); err != nil {
 			t.Fatalf("insert %s/%s: %v", d.zone, d.date, err)
 		}
 	}
 
-	return db
+	return pool
 }
 
 func TestQueryPrayerTimes(t *testing.T) {
-	db := setupQueryTestDB(t)
-	defer db.Close()
+	pool := setupQueryTestDB(t)
+	defer pool.Close()
 
-	rows, err := QueryPrayerTimes(db, "SGR01", 2026, 6)
+	rows, err := QueryPrayerTimes(pool, context.Background(), "SGR01", 2026, 6)
 	if err != nil {
 		t.Fatalf("QueryPrayerTimes failed: %v", err)
 	}
@@ -99,10 +108,10 @@ func TestQueryPrayerTimes(t *testing.T) {
 }
 
 func TestQueryPrayerTimesDifferentZone(t *testing.T) {
-	db := setupQueryTestDB(t)
-	defer db.Close()
+	pool := setupQueryTestDB(t)
+	defer pool.Close()
 
-	rows, err := QueryPrayerTimes(db, "JHR01", 2026, 6)
+	rows, err := QueryPrayerTimes(pool, context.Background(), "JHR01", 2026, 6)
 	if err != nil {
 		t.Fatalf("QueryPrayerTimes failed: %v", err)
 	}
@@ -115,22 +124,22 @@ func TestQueryPrayerTimesDifferentZone(t *testing.T) {
 }
 
 func TestQueryPrayerTimesNoData(t *testing.T) {
-	db := setupQueryTestDB(t)
-	defer db.Close()
+	pool := setupQueryTestDB(t)
+	defer pool.Close()
 
-	_, err := QueryPrayerTimes(db, "XXXXX", 2026, 6)
-	if err != sql.ErrNoRows {
-		t.Errorf("expected sql.ErrNoRows, got %v", err)
+	_, err := QueryPrayerTimes(pool, context.Background(), "XXXXX", 2026, 6)
+	if err != ErrNoRows {
+		t.Errorf("expected ErrNoRows, got %v", err)
 	}
 }
 
 func TestQueryPrayerTimesDifferentMonth(t *testing.T) {
-	db := setupQueryTestDB(t)
-	defer db.Close()
+	pool := setupQueryTestDB(t)
+	defer pool.Close()
 
-	_, err := QueryPrayerTimes(db, "SGR01", 2026, 1)
-	if err != sql.ErrNoRows {
-		t.Errorf("expected sql.ErrNoRows for January (no data), got %v", err)
+	_, err := QueryPrayerTimes(pool, context.Background(), "SGR01", 2026, 1)
+	if err != ErrNoRows {
+		t.Errorf("expected ErrNoRows for January (no data), got %v", err)
 	}
 }
 

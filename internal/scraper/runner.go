@@ -2,41 +2,45 @@ package scraper
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"time"
+
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
-func RunFullScrape(ctx context.Context, db *sql.DB, year int) {
+func RunFullScrape(ctx context.Context, pool *sqlitex.Pool, year int) {
 	log.Printf("[scraper] Starting full scrape for year %d", year)
 
-	if err := updateScraperStatus(db, "running"); err != nil {
+	if err := updateScraperStatus(pool, "running"); err != nil {
 		log.Printf("[scraper] Failed to update status to running: %v", err)
 	}
 
-	if err := SeedZones(db); err != nil {
+	if err := SeedZones(pool); err != nil {
 		log.Printf("[scraper] Seed zones failed: %v", err)
-		_ = updateScraperStatus(db, "failed")
+		_ = updateScraperStatus(pool, "failed")
 		return
 	}
 
-	rows, err := db.QueryContext(ctx, "SELECT jakim_code FROM prayer_zones ORDER BY jakim_code")
+	conn, err := pool.Take(context.Background())
 	if err != nil {
-		log.Printf("[scraper] Query zones failed: %v", err)
-		_ = updateScraperStatus(db, "failed")
+		log.Printf("[scraper] Take conn failed: %v", err)
+		_ = updateScraperStatus(pool, "failed")
 		return
 	}
-	defer rows.Close()
+	defer pool.Put(conn)
 
 	var zones []string
-	for rows.Next() {
-		var code string
-		if err := rows.Scan(&code); err != nil {
-			log.Printf("[scraper] Scan zone failed: %v", err)
-			continue
-		}
-		zones = append(zones, code)
+	if err := sqlitex.ExecuteTransient(conn, "SELECT jakim_code FROM prayer_zones ORDER BY jakim_code", &sqlitex.ExecOptions{
+		ResultFunc: func(stmt *sqlite.Stmt) error {
+			zones = append(zones, stmt.ColumnText(0))
+			return nil
+		},
+	}); err != nil {
+		log.Printf("[scraper] Query zones failed: %v", err)
+		_ = updateScraperStatus(pool, "failed")
+		return
 	}
 
 	successCount := 0
@@ -45,7 +49,7 @@ func RunFullScrape(ctx context.Context, db *sql.DB, year int) {
 		select {
 		case <-ctx.Done():
 			log.Printf("[scraper] Cancelled after %d/%d zones", successCount+failCount, len(zones))
-			_ = updateScraperStatus(db, "failed")
+			_ = updateScraperStatus(pool, "failed")
 			return
 		default:
 		}
@@ -61,7 +65,7 @@ func RunFullScrape(ctx context.Context, db *sql.DB, year int) {
 			continue
 		}
 
-		if err := SavePrayerTimes(db, zone, year, times); err != nil {
+		if err := SavePrayerTimes(pool, zone, year, times); err != nil {
 			log.Printf("[scraper] ✗ %s (save): %v", zone, err)
 			failCount++
 			continue
@@ -75,7 +79,7 @@ func RunFullScrape(ctx context.Context, db *sql.DB, year int) {
 			case <-time.After(1200 * time.Millisecond):
 			case <-ctx.Done():
 				log.Printf("[scraper] Cancelled during delay")
-				_ = updateScraperStatus(db, "failed")
+				_ = updateScraperStatus(pool, "failed")
 				return
 			}
 		}
@@ -86,20 +90,26 @@ func RunFullScrape(ctx context.Context, db *sql.DB, year int) {
 		status = fmt.Sprintf("partial: %d/%d zones (%d failed)", successCount, successCount+failCount, failCount)
 	}
 	log.Printf("[scraper] Complete: %s", status)
-	_ = updateScraperStatus(db, status)
+	_ = updateScraperStatus(pool, status)
 }
 
-func updateScraperStatus(db *sql.DB, status string) error {
+func updateScraperStatus(pool *sqlitex.Pool, status string) error {
+	conn, err := pool.Take(context.Background())
+	if err != nil {
+		return fmt.Errorf("take conn: %w", err)
+	}
+	defer pool.Put(conn)
+
 	now := time.Now().UTC().Format(time.RFC3339)
-	if _, err := db.Exec(
+	if err := sqlitex.Exec(conn,
 		"INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('scraper.last_run', ?, ?)",
-		now, now,
+		nil, now, now,
 	); err != nil {
 		return err
 	}
-	if _, err := db.Exec(
+	if err := sqlitex.Exec(conn,
 		"INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('scraper.last_status', ?, ?)",
-		status, now,
+		nil, status, now,
 	); err != nil {
 		return err
 	}

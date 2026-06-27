@@ -2,13 +2,13 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 
-	_ "modernc.org/sqlite"
+	"zombiezen.com/go/sqlite"
+	"zombiezen.com/go/sqlite/sqlitex"
 
 	"github.com/shabilullah/gowaktusolat/internal/config"
 	"github.com/shabilullah/gowaktusolat/internal/db"
@@ -28,19 +28,22 @@ func main() {
 
 	cfg := config.Load()
 
-	database, err := sql.Open("sqlite", cfg.DBPath)
+	pool, err := sqlitex.NewPool(cfg.DBPath, sqlitex.PoolOptions{
+		Flags:    sqlite.OpenReadWrite | sqlite.OpenCreate | sqlite.OpenWAL | sqlite.OpenURI,
+		PoolSize: 4,
+	})
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
-	defer database.Close()
+	defer pool.Close()
 
-	if err := db.InitDB(database); err != nil {
+	if err := db.InitPool(pool); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
 	switch cmd {
 	case "seed-zones":
-		if err := scraper.SeedZones(database); err != nil {
+		if err := scraper.SeedZones(pool); err != nil {
 			log.Fatalf("Failed to seed zones: %v", err)
 		}
 		fmt.Println("Zones seeded successfully.")
@@ -58,7 +61,7 @@ func main() {
 			log.Fatal("--year is required")
 		}
 
-		scraper.RunFullScrape(context.Background(), database, *year)
+		scraper.RunFullScrape(context.Background(), pool, *year)
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
