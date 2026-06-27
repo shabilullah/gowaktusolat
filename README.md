@@ -411,28 +411,30 @@ GET /api/solat/gps/3.068498/101.630263?month=6&year=2026
 <details>
 <summary><code>GET /api/jadual_solat/:zone</code> — Printable PDF prayer timetable</summary>
 
+
 ```
-GET /api/jadual_solat/SGR01?month=6&year=2026
+GET /api/jadual_solat/SGR01?month=6&year=2026   # single month
+GET /api/jadual_solat/SGR01?year=2026            # full year (12 pages)
 ```
 
 **Query parameters**
 
-| Param         | Type     | Default     | Description                       | Example      |
-|---------------|----------|-------------|-----------------------------------|--------------|
-| `month`       | `int`    | current     | 1–12                              | `6`          |
-| `year`        | `int`    | current     | >= 2020                           | `2026`       |
-| `orientation` | `string` | `landscape` | `landscape` or `portrait`         | `portrait`   |
-| `timeFormat`  | `string` | `24h`       | `24h` = `15:04`, `12h` = `3:04 PM` | `12h`      |
+| Param   | Type   | Default | Description                          | Example |
+|---------|--------|---------|--------------------------------------|---------|
+| `month` | `int`  | (none)  | 1–12; omit to generate all 12 months | `6`     |
+| `year`  | `int`  | current | >= 2020                              | `2026`  |
 
 **Response** `200` — `Content-Type: application/pdf`
 
-A4 PDF with title, zone header, and columns: Tarikh | Hijri | Imsak | Subuh | Syuruk | Zohor | Asar | Maghrib | Isyak.
+Landscape A4 PDF. Single-month requests return one page; year-only requests return 12 pages (one per month). Columns: Tarikh, Subuh, Syuruk, Zohor, Asar, Maghrib, Isyak.
 
 **Errors**
 
 | Status | Body | Cause |
 |--------|------|-------|
 | `404` | `{"message":"No data found for zone: ..."}` | No data |
+
+</details>
 
 ### Last Update
 
