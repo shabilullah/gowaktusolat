@@ -210,11 +210,11 @@ GET /api/zones
 ]
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `jakimCode` | `string` | JAKIM zone code |
-| `negeri` | `string` | State name (Malay) |
-| `daerah` | `string` | District(s) covered |
+| Field       | Type     | Description          | Example                                        |
+|-------------|----------|----------------------|------------------------------------------------|
+| `jakimCode` | `string` | JAKIM zone code      | `"SGR01"`                                      |
+| `negeri`    | `string` | State name (Malay)   | `"Selangor"`                                   |
+| `daerah`    | `string` | District(s) covered  | `"Gombak, Petaling, Sepang, Hulu Langat, ..."` |
 
 </details>
 
@@ -232,8 +232,9 @@ GET /api/zones/SGR
   {"jakimCode": "SGR01", "negeri": "Selangor", "daerah": "Gombak, Petaling, Sepang, Hulu Langat, Hulu Selangor, Shah Alam"},
   {"jakimCode": "SGR02", "negeri": "Selangor", "daerah": "Kuala Selangor, Sabak Bernam"},
   {"jakimCode": "SGR03", "negeri": "Selangor", "daerah": "Klang, Kuala Langat"}
-]
 ```
+
+**Fields** — same as [`GET /api/zones`](#zones) above (all three-letter codes match the `:state` prefix).
 
 </details>
 
@@ -249,6 +250,14 @@ GET /api/zones/3.068498/101.630263
 ```json
 {"zone": "SGR01", "state": "SGR", "district": "Petaling"}
 ```
+
+**Fields**
+
+| Field      | Type     | Description            | Example      |
+|------------|----------|------------------------|--------------|
+| `zone`     | `string` | Detected JAKIM zone    | `"SGR01"`    |
+| `state`    | `string` | Three-letter code      | `"SGR"`      |
+| `district` | `string` | Matched district name  | `"Petaling"` |
 
 **Errors**
 
@@ -301,7 +310,34 @@ GET /api/solat/SGR01?month=6&year=2026
   "zone": "SGR01",
   "bearing": ""
 }
-```
+
+**Wrapper fields**
+
+| Field        | Type     | Description                                      | Example                     |
+|--------------|----------|--------------------------------------------------|-----------------------------|
+| `prayerTime` | `array`  | List of daily prayer time objects (see below)    | `[{"hijri":"…","date":"…"}]` |
+| `status`     | `string` | `"OK!"` on success                               | `"OK!"`                     |
+| `serverTime` | `string` | Server timestamp in `YYYY-MM-DD HH:MM:SS`        | `"2026-06-26 20:34:11"`     |
+| `periodType` | `string` | `"month"` for month queries, `"day"` for day     | `"month"`                   |
+| `lang`       | `string` | Reserved, always `""`                            | `""`                        |
+| `zone`       | `string` | JAKIM zone code queried                          | `"SGR01"`                   |
+| `bearing`    | `string` | Reserved, always `""`                            | `""`                        |
+
+**`prayerTime[]` fields**
+
+| Field     | Type     | Description                                           | Example           |
+|-----------|----------|-------------------------------------------------------|-------------------|
+| `hijri`   | `string` | Hijri date in `YYYY-MM-DD` format                     | `"1447-12-15"`    |
+| `date`    | `string` | Gregorian date in `DD-Mon-YYYY` format                | `"01-Jun-2026"`   |
+| `day`     | `string` | Weekday name in English (`"Monday"`–`"Sunday"`)       | `"Monday"`        |
+| `imsak`   | `string` | Imsak time in `HH:MM:SS` (24h)                        | `"05:39:00"`      |
+| `fajr`    | `string` | Fajr/Subuh time in `HH:MM:SS` (24h)                   | `"05:49:00"`      |
+| `syuruk`  | `string` | Sunrise time in `HH:MM:SS` (24h)                      | `"07:01:00"`      |
+| `dhuha`   | `string` | Dhuha time in `HH:MM:SS` (24h)                        | `"07:26:00"`      |
+| `dhuhr`   | `string` | Dhuhr/Zohor time in `HH:MM:SS` (24h)                  | `"13:14:00"`      |
+| `asr`     | `string` | Asr time in `HH:MM:SS` (24h)                          | `"16:39:00"`      |
+| `maghrib` | `string` | Maghrib time in `HH:MM:SS` (24h)                      | `"19:22:00"`      |
+| `isha`    | `string` | Isha/Isyak time in `HH:MM:SS` (24h)                   | `"20:37:00"`      |
 
 **Errors**
 
@@ -345,6 +381,7 @@ GET /api/solat/SGR01/15?month=6&year=2026
   "bearing": ""
 }
 ```
+**Fields** — same wrapper and [`prayerTime` fields](#prayer-times-solat) as the month endpoint. `prayerTime` is a **single object** (not an array) and `periodType` is `"day"`.
 
 **Errors**
 
@@ -363,9 +400,16 @@ GET /api/solat/SGR01/15?month=6&year=2026
 GET /api/solat/gps/3.068498/101.630263?month=6&year=2026
 ```
 
-**Query parameters** — same as month endpoint.
+**Query parameters** — same as [month endpoint](#prayer-times-solat).
 
-**Response** `200` — same shape as month endpoint, `zone` reflects the auto-detected code
+**Response** `200` — same wrapper and [`prayerTime` fields](#prayer-times-solat) as the month endpoint. `zone` reflects the auto-detected JAKIM code.
+
+**Path parameters**
+
+| Param  | Type    | Description | Example    |
+|--------|---------|-------------|------------|
+| `lat`  | `float` | Latitude    | `3.068498` |
+| `long` | `float` | Longitude   | `101.630263` |
 
 **Errors** — same GPS errors as `/api/zones/:lat/:long` (`422`, `404`), plus the standard zone-not-found.
 
@@ -382,16 +426,16 @@ GET /api/jadual_solat/SGR01?month=6&year=2026
 
 **Query parameters**
 
-| Param         | Type     | Default     | Description                       |
-|---------------|----------|-------------|-----------------------------------|
-| `month`       | `int`    | current     | 1–12                              |
-| `year`        | `int`    | current     | >= 2020                           |
-| `orientation` | `string` | `landscape` | `landscape` or `portrait`         |
-| `timeFormat`  | `string` | `24h`       | `24h` = `15:04`, `12h` = `3:04 PM` |
+| Param         | Type     | Default     | Description                       | Example      |
+|---------------|----------|-------------|-----------------------------------|--------------|
+| `month`       | `int`    | current     | 1–12                              | `6`          |
+| `year`        | `int`    | current     | >= 2020                           | `2026`       |
+| `orientation` | `string` | `landscape` | `landscape` or `portrait`         | `portrait`   |
+| `timeFormat`  | `string` | `24h`       | `24h` = `15:04`, `12h` = `3:04 PM` | `12h`      |
 
 **Response** `200` — `Content-Type: application/pdf`
 
-A4 PDF with title, zone header, and table: Tarikh | Hijri | Imsak | Subuh | Syuruk | Zohor | Asar | Maghrib | Isyak.
+A4 PDF with title, zone header, and columns: Tarikh | Hijri | Imsak | Subuh | Syuruk | Zohor | Asar | Maghrib | Isyak.
 
 **Errors**
 
@@ -426,12 +470,12 @@ X-API-Key: your-secret-key
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `enabled` | `bool` | Whether the cron scheduler is active |
-| `schedule` | `string` | Cron expression (`min hour dom month dow`) |
-| `last_run` | `string` | ISO 8601 timestamp of last scrape |
-| `last_status` | `string` | Result of last scrape (`"running"`, `"success: N/N zones"`, `"partial: N/N zones (M failed)"`) |
+| Field             | Type     | Description                                                              | Example                    |
+|-------------------|----------|--------------------------------------------------------------------------|----------------------------|
+| `scraper.enabled` | `bool`   | Whether the cron scheduler is active                                     | `false`                    |
+| `scraper.schedule`| `string` | Cron expression (`min hour dom month dow`)                               | `"0 2 1 1 *"`              |
+| `scraper.last_run`| `string` | ISO 8601 timestamp of last scrape, or `""` if never run                  | `"2026-06-26T12:53:30Z"`   |
+| `scraper.last_status` | `string` | Result of last scrape: `"running"`, `"success: N/N zones"`, `"partial: N/N zones (M failed)"`, or `""` | `"success: 53/53 zones"` |
 
 </details>
 
@@ -448,14 +492,14 @@ X-API-Key: your-secret-key
 
 **Request body** — partial update, all fields optional:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `scraper.enabled` | `bool` | Enable/disable scheduled scraping |
-| `scraper.schedule` | `string` | Valid cron expression (5-field: `min hour dom month dow`) |
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `scraper.enabled` | `bool` | Enable/disable scheduled scraping | `true` |
+| `scraper.schedule` | `string` | Valid cron expression (5-field: `min hour dom month dow`) | `"0 2 1 1 *"` |
 
 `last_run` and `last_status` are **read-only** — setting them is silently ignored (not an error).
 
-**Response** `200` — full settings object (same shape as GET)
+**Response** `200` — full settings object (same field table as GET above)
 
 **Errors**
 
@@ -483,6 +527,10 @@ GET /api/nonexistent
 ```json
 {"message": "No route matched. Please see the API documentation."}
 ```
+
+| Field     | Type     | Description     | Example                                                |
+|-----------|----------|-----------------|--------------------------------------------------------|
+| `message` | `string` | Error message   | `"No route matched. Please see the API documentation."` |
 
 </details>
 
