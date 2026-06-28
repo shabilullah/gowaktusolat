@@ -27,7 +27,7 @@ func setupLastUpdateTestDB(t *testing.T) *sqlitex.Pool {
 	}
 	defer pool.Put(conn)
 
-	if err := sqlitex.Exec(conn, `CREATE TABLE IF NOT EXISTS settings (
+	if err := sqlitex.Execute(conn, `CREATE TABLE IF NOT EXISTS settings (
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL,
 		updated_at TEXT NOT NULL
@@ -97,7 +97,7 @@ func TestLastUpdateGetEmpty(t *testing.T) {
 		t.Fatalf("take: %v", err)
 	}
 
-	if err := sqlitex.Exec(conn, `CREATE TABLE IF NOT EXISTS settings (
+	if err := sqlitex.Execute(conn, `CREATE TABLE IF NOT EXISTS settings (
 		key TEXT PRIMARY KEY,
 		value TEXT NOT NULL,
 		updated_at TEXT NOT NULL

@@ -101,15 +101,19 @@ func updateScraperStatus(pool *sqlitex.Pool, status string) error {
 	defer pool.Put(conn)
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	if err := sqlitex.Exec(conn,
+	if err := sqlitex.Execute(conn,
 		"INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('scraper.last_run', ?, ?)",
-		nil, now, now,
+		&sqlitex.ExecOptions{
+			Args: []interface{}{now, now},
+		},
 	); err != nil {
 		return err
 	}
-	if err := sqlitex.Exec(conn,
+	if err := sqlitex.Execute(conn,
 		"INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('scraper.last_status', ?, ?)",
-		nil, status, now,
+		&sqlitex.ExecOptions{
+			Args: []interface{}{status, now},
+		},
 	); err != nil {
 		return err
 	}

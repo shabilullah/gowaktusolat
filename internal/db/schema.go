@@ -14,7 +14,7 @@ func InitPool(pool *sqlitex.Pool) error {
 	}
 	defer pool.Put(conn)
 
-	if err := sqlitex.Exec(conn, "PRAGMA journal_mode=WAL", nil); err != nil {
+	if err := sqlitex.Execute(conn, "PRAGMA journal_mode=WAL", nil); err != nil {
 		return err
 	}
 
@@ -59,7 +59,7 @@ func InitPool(pool *sqlitex.Pool) error {
 	}
 
 	for _, stmt := range statements {
-		if err := sqlitex.Exec(conn, stmt, nil); err != nil {
+		if err := sqlitex.Execute(conn, stmt, nil); err != nil {
 			return err
 		}
 	}
@@ -87,10 +87,11 @@ func seedDefaultSettings(conn *sqlite.Conn) error {
 	}
 
 	for k, v := range defaults {
-		if err := sqlitex.Exec(conn,
+		if err := sqlitex.Execute(conn,
 			"INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))",
-			nil,
-			k, v,
+			&sqlitex.ExecOptions{
+				Args: []interface{}{k, v},
+			},
 		); err != nil {
 			return err
 		}

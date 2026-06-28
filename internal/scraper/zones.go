@@ -39,9 +39,11 @@ func SeedZones(pool *sqlitex.Pool) error {
 	}
 
 	for _, z := range zones {
-		if err := sqlitex.Exec(conn,
+		if err := sqlitex.Execute(conn,
 			"INSERT OR REPLACE INTO prayer_zones (jakim_code, negeri, daerah) VALUES (?, ?, ?)",
-			nil, z.JakimCode, z.Negeri, z.Daerah,
+			&sqlitex.ExecOptions{
+				Args: []interface{}{z.JakimCode, z.Negeri, z.Daerah},
+			},
 		); err != nil {
 			return fmt.Errorf("seed zone %s: %w", z.JakimCode, err)
 		}

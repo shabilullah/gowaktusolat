@@ -125,7 +125,7 @@ func (d *Detector) seedFromGeoJSON() error {
 		return fmt.Errorf("unmarshal GeoJSON: %w", err)
 	}
 
-	if err := sqlitex.Exec(conn, "BEGIN IMMEDIATE", nil); err != nil {
+	if err := sqlitex.Execute(conn, "BEGIN IMMEDIATE", nil); err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 
@@ -137,23 +137,26 @@ func (d *Detector) seedFromGeoJSON() error {
 
 		stringID := fmt.Sprintf("%s/%s", feat.Properties.JakimCode, feat.Properties.Name)
 
-		if err := sqlitex.Exec(conn,
+		if err := sqlitex.Execute(conn,
 			`INSERT OR REPLACE INTO zone_polygons (string_id, name, code_state, state, jakim_code, polygon)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
-			nil,
-			stringID,
-			feat.Properties.Name,
-			int(feat.Properties.CodeState),
-			feat.Properties.State,
-			feat.Properties.JakimCode,
-			string(polygonJSON),
+			&sqlitex.ExecOptions{
+				Args: []interface{}{
+					stringID,
+					feat.Properties.Name,
+					int(feat.Properties.CodeState),
+					feat.Properties.State,
+					feat.Properties.JakimCode,
+					string(polygonJSON),
+				},
+			},
 		); err != nil {
-			sqlitex.Exec(conn, "ROLLBACK", nil)
+			sqlitex.Execute(conn, "ROLLBACK", nil)
 			return fmt.Errorf("insert polygon: %w", err)
 		}
 	}
 
-	if err := sqlitex.Exec(conn, "COMMIT", nil); err != nil {
+	if err := sqlitex.Execute(conn, "COMMIT", nil); err != nil {
 		return fmt.Errorf("commit tx: %w", err)
 	}
 

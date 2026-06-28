@@ -25,11 +25,11 @@ func setupQueryTestDB(t *testing.T) *sqlitex.Pool {
 	}
 	defer pool.Put(conn)
 
-	if err := sqlitex.Exec(conn, "PRAGMA journal_mode=WAL", nil); err != nil {
+	if err := sqlitex.Execute(conn, "PRAGMA journal_mode=WAL", nil); err != nil {
 		t.Fatalf("wal: %v", err)
 	}
 
-	if err := sqlitex.Exec(conn, `CREATE TABLE IF NOT EXISTS prayer_times (
+	if err := sqlitex.Execute(conn, `CREATE TABLE IF NOT EXISTS prayer_times (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		date TEXT NOT NULL,
 		location_code TEXT NOT NULL,
@@ -48,7 +48,7 @@ func setupQueryTestDB(t *testing.T) *sqlitex.Pool {
 		t.Fatalf("create table: %v", err)
 	}
 
-	if err := sqlitex.Exec(conn, `CREATE UNIQUE INDEX IF NOT EXISTS idx_prayer_times_zone_date ON prayer_times(location_code, date)`, nil); err != nil {
+	if err := sqlitex.Execute(conn, `CREATE UNIQUE INDEX IF NOT EXISTS idx_prayer_times_zone_date ON prayer_times(location_code, date)`, nil); err != nil {
 		t.Fatalf("create index: %v", err)
 	}
 
@@ -67,11 +67,14 @@ func setupQueryTestDB(t *testing.T) *sqlitex.Pool {
 	}
 
 	for _, d := range testData {
-		if err := sqlitex.Exec(conn,
+		if err := sqlitex.Execute(conn,
 			`INSERT INTO prayer_times (date, location_code, hijri, imsak, fajr, syuruk, dhuha, dhuhr, asr, maghrib, isha, created_at, updated_at)
 			 VALUES (?, ?, '', '', ?, '', '', ?, ?, ?, ?, ?, ?)`,
-			nil,
-			d.date, d.zone, d.fajr, d.dhuhr, d.asr, d.maghrib, d.isha, now, now,
+			&sqlitex.ExecOptions{
+				Args: []interface{}{
+					d.date, d.zone, d.fajr, d.dhuhr, d.asr, d.maghrib, d.isha, now, now,
+				},
+			},
 		); err != nil {
 			t.Fatalf("insert %s/%s: %v", d.zone, d.date, err)
 		}
