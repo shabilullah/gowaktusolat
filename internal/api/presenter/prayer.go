@@ -3,7 +3,7 @@ package presenter
 import (
 	"time"
 
-	"github.com/shabilullah/gowaktusolat/internal/repository"
+	"github.com/shabilullah/gowaktusolat/internal/service"
 )
 
 // PrayerTimeItem is a single prayer-time entry in JSON responses.
@@ -43,10 +43,10 @@ type PrayerDayResponse struct {
 	Bearing    string         `json:"bearing"`
 }
 
-// ItemFromRow converts a DB prayer-time row into a JSON-ready item.
-func ItemFromRow(r repository.PrayerTimeRow) PrayerTimeItem {
-	t, err := time.Parse("2006-01-02", r.Date)
-	dateStr := r.Date
+// ItemFromDTO converts a service-layer DTO into a JSON-ready prayer time item.
+func ItemFromDTO(d service.PrayerTimeDTO) PrayerTimeItem {
+	t, err := time.Parse("2006-01-02", d.Date)
+	dateStr := d.Date
 	dayStr := ""
 	if err == nil {
 		dateStr = t.Format("02-Jan-2006")
@@ -54,17 +54,17 @@ func ItemFromRow(r repository.PrayerTimeRow) PrayerTimeItem {
 	}
 
 	return PrayerTimeItem{
-		Hijri:   nilIfEmpty(r.Hijri),
+		Hijri:   nilIfEmpty(d.Hijri),
 		Date:    dateStr,
 		Day:     dayStr,
-		Imsak:   nilIfEmpty(r.Imsak),
-		Fajr:    nilIfEmpty(r.Fajr),
-		Syuruk:  nilIfEmpty(r.Syuruk),
-		Dhuha:   nilIfEmpty(r.Dhuha),
-		Dhuhr:   nilIfEmpty(r.Dhuhr),
-		Asr:     nilIfEmpty(r.Asr),
-		Maghrib: nilIfEmpty(r.Maghrib),
-		Isha:    nilIfEmpty(r.Isha),
+		Imsak:   nilIfEmpty(d.Imsak),
+		Fajr:    nilIfEmpty(d.Fajr),
+		Syuruk:  nilIfEmpty(d.Syuruk),
+		Dhuha:   nilIfEmpty(d.Dhuha),
+		Dhuhr:   nilIfEmpty(d.Dhuhr),
+		Asr:     nilIfEmpty(d.Asr),
+		Maghrib: nilIfEmpty(d.Maghrib),
+		Isha:    nilIfEmpty(d.Isha),
 	}
 }
 

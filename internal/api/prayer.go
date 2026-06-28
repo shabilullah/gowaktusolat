@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -8,23 +9,20 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/shabilullah/gowaktusolat/internal/api/presenter"
-	"github.com/shabilullah/gowaktusolat/internal/geo"
 	"github.com/shabilullah/gowaktusolat/internal/repository"
-	reposqlite "github.com/shabilullah/gowaktusolat/internal/repository/sqlite"
+	"github.com/shabilullah/gowaktusolat/internal/service"
 )
 
 type PrayerTime struct {
-	Repo     *reposqlite.PrayerTimeRepo
-	Detector *geo.Detector
-	BasePath string
+	Service service.PrayerService
 }
 
 func (h *PrayerTime) FetchMonth(c fiber.Ctx) error {
 	zone := c.Params("zone")
 	year, month := parseYearMonth(c)
 
-	rows, err := h.Repo.Query(c.Context(), zone, year, month)
-	if err == repository.ErrNoRows {
+	dtos, err := h.Service.GetMonth(c.Context(), zone, year, month)
+	if errors.Is(err, repository.ErrNoRows) {
 		return c.Status(404).JSON(presenter.Message(
 			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
 		))
@@ -33,9 +31,9 @@ func (h *PrayerTime) FetchMonth(c fiber.Ctx) error {
 		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 
-	items := make([]presenter.PrayerTimeItem, len(rows))
-	for i, r := range rows {
-		items[i] = presenter.ItemFromRow(r)
+	items := make([]presenter.PrayerTimeItem, len(dtos))
+	for i, d := range dtos {
+		items[i] = presenter.ItemFromDTO(d)
 	}
 
 	return c.JSON(presenter.PrayerTimes(items, zone))
@@ -51,8 +49,8 @@ func (h *PrayerTime) FetchDay(c fiber.Ctx) error {
 
 	year, month := parseYearMonth(c)
 
-	rows, err := h.Repo.Query(c.Context(), zone, year, month)
-	if err == repository.ErrNoRows {
+	dto, err := h.Service.GetDay(c.Context(), zone, year, month, day)
+	if errors.Is(err, repository.ErrNoRows) {
 		return c.Status(404).JSON(presenter.Message(
 			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
 		))
@@ -61,13 +59,7 @@ func (h *PrayerTime) FetchDay(c fiber.Ctx) error {
 		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 
-	if day > len(rows) {
-		return c.Status(400).JSON(presenter.Message(
-			fmt.Sprintf("Day %d out of range for %s/%d", day, monthName(month), year),
-		))
-	}
-
-	return c.JSON(presenter.PrayerDay(presenter.ItemFromRow(rows[day-1]), zone))
+	return c.JSON(presenter.PrayerDay(presenter.ItemFromDTO(*dto), zone))
 }
 
 func (h *PrayerTime) FetchMonthByGPS(c fiber.Ctx) error {
@@ -83,27 +75,15 @@ func (h *PrayerTime) FetchMonthByGPS(c fiber.Ctx) error {
 		return c.Status(422).JSON(presenter.Message("Invalid longitude"))
 	}
 
-	result, err := h.Detector.DetectZone(lat, lng)
+	year, month := parseYearMonth(c)
+	dtos, zone, err := h.Service.GetByGPS(c.Context(), lat, lng, year, month)
 	if err != nil {
 		return c.Status(404).JSON(presenter.Message(err.Error()))
 	}
 
-	zone := result.Zone
-	year, month := parseYearMonth(c)
-
-	rows, err := h.Repo.Query(c.Context(), zone, year, month)
-	if err == repository.ErrNoRows {
-		return c.Status(404).JSON(presenter.Message(
-			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
-		))
-	}
-	if err != nil {
-		return c.Status(500).JSON(presenter.Message(err.Error()))
-	}
-
-	items := make([]presenter.PrayerTimeItem, len(rows))
-	for i, r := range rows {
-		items[i] = presenter.ItemFromRow(r)
+	items := make([]presenter.PrayerTimeItem, len(dtos))
+	for i, d := range dtos {
+		items[i] = presenter.ItemFromDTO(d)
 	}
 
 	return c.JSON(presenter.PrayerTimes(items, zone))

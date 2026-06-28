@@ -11,17 +11,16 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/keyauth"
 
 	"github.com/shabilullah/gowaktusolat/internal/api/presenter"
-	"github.com/shabilullah/gowaktusolat/internal/geo"
-	reposqlite "github.com/shabilullah/gowaktusolat/internal/repository/sqlite"
+	"github.com/shabilullah/gowaktusolat/internal/service"
+	"zombiezen.com/go/sqlite/sqlitex"
 )
 
 type Zones struct {
-	ZoneRepo *reposqlite.ZoneRepo
-	Detector *geo.Detector
+	Service service.ZoneService
 }
 
 func (h *Zones) Index(c fiber.Ctx) error {
-	zones, err := h.ZoneRepo.ListAll(c.Context())
+	zones, err := h.Service.ListAll(c.Context())
 	if err != nil {
 		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
@@ -40,7 +39,7 @@ func (h *Zones) Index(c fiber.Ctx) error {
 func (h *Zones) GetByState(c fiber.Ctx) error {
 	state := strings.ToUpper(c.Params("state"))
 
-	zones, err := h.ZoneRepo.ListByState(c.Context(), state)
+	zones, err := h.Service.ListByState(c.Context(), state)
 	if err != nil {
 		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
@@ -69,29 +68,36 @@ func (h *Zones) GetByCoordinate(c fiber.Ctx) error {
 		return c.Status(422).JSON(presenter.Message("Invalid longitude"))
 	}
 
-	result, err := h.Detector.DetectZone(lat, lng)
+	zone, err := h.Service.GetByCoordinate(c.Context(), lat, lng)
 	if err != nil {
 		return c.Status(404).JSON(presenter.Message(err.Error()))
 	}
 
 	return c.JSON(presenter.ZoneByCoordinateResponse{
-		Zone:     result.Zone,
-		State:    result.State,
-		District: result.District,
+		Zone:     zone.JakimCode,
+		State:    zone.Negeri,
+		District: zone.Daerah,
 	})
 }
 
-func RegisterRoutes(app *fiber.App, prayerRepo *reposqlite.PrayerTimeRepo, zoneRepo *reposqlite.ZoneRepo, detector *geo.Detector, apiKey string) {
+func RegisterRoutes(
+	app *fiber.App,
+	prayerSvc service.PrayerService,
+	zoneSvc service.ZoneService,
+	pdfSvc service.PDFService,
+	lastUpdateDB *sqlitex.Pool,
+	apiKey string,
+) {
 	configuredAPIKey = apiKey
 
-	api := app.Group("/api")
+	apiGroup := app.Group("/api")
 
-	api.Use(func(c fiber.Ctx) error {
+	apiGroup.Use(func(c fiber.Ctx) error {
 		c.Set("Cache-Control", "public, max-age=3600")
 		return c.Next()
 	})
 
-	api.Use(func(c fiber.Ctx) error {
+	apiGroup.Use(func(c fiber.Ctx) error {
 		if configuredAPIKey != "" && fiber.Query[bool](c, "invalidateCache") {
 			if c.Get("X-API-Key") != configuredAPIKey {
 				return c.Status(fiber.StatusUnauthorized).JSON(presenter.Message("unauthorized"))
@@ -100,7 +106,7 @@ func RegisterRoutes(app *fiber.App, prayerRepo *reposqlite.PrayerTimeRepo, zoneR
 		return c.Next()
 	})
 
-	api.Use(cache.New(cache.Config{
+	apiGroup.Use(cache.New(cache.Config{
 		Next: func(c fiber.Ctx) bool {
 			path := c.Path()
 			if strings.Contains(path, "jadual_solat") || strings.Contains(path, "cache/reset") {
@@ -124,27 +130,31 @@ func RegisterRoutes(app *fiber.App, prayerRepo *reposqlite.PrayerTimeRepo, zoneR
 		},
 	}))
 
-	lastUpdateHandler := &LastUpdate{DB: prayerRepo.Pool}
-	api.Get("/last-update", lastUpdateHandler.Get)
+	lastUpdateHandler := &LastUpdate{DB: lastUpdateDB}
+	apiGroup.Get("/last-update", lastUpdateHandler.Get)
 
-	jadualHandler := &JadualSolat{PrayerRepo: prayerRepo, ZoneRepo: zoneRepo}
-	api.Get("/jadual_solat/:zone", jadualHandler.FetchMonth)
+	jadualHandler := &JadualSolat{
+		PrayerService: prayerSvc,
+		ZoneService:   zoneSvc,
+		PDFService:    pdfSvc,
+	}
+	apiGroup.Get("/jadual_solat/:zone", jadualHandler.FetchMonth)
 
-	prayerHandler := &PrayerTime{Repo: prayerRepo, Detector: detector}
-	api.Get("/solat/:zone", prayerHandler.FetchMonth)
-	api.Get("/solat/:zone/:day", prayerHandler.FetchDay)
-	api.Get("/solat/gps/:lat/:long", prayerHandler.FetchMonthByGPS)
+	prayerHandler := &PrayerTime{Service: prayerSvc}
+	apiGroup.Get("/solat/:zone", prayerHandler.FetchMonth)
+	apiGroup.Get("/solat/:zone/:day", prayerHandler.FetchDay)
+	apiGroup.Get("/solat/gps/:lat/:long", prayerHandler.FetchMonthByGPS)
 
-	zonesHandler := &Zones{ZoneRepo: zoneRepo, Detector: detector}
-	api.Get("/zones", zonesHandler.Index)
-	api.Get("/zones/:lat/:long", zonesHandler.GetByCoordinate)
-	api.Get("/zones/:state", zonesHandler.GetByState)
+	zonesHandler := &Zones{Service: zoneSvc}
+	apiGroup.Get("/zones", zonesHandler.Index)
+	apiGroup.Get("/zones/:lat/:long", zonesHandler.GetByCoordinate)
+	apiGroup.Get("/zones/:state", zonesHandler.GetByState)
 
 	cacheHandler := &CacheHandler{}
 	if apiKey != "" {
-		api.Post("/cache/reset", keyauthMiddleware(apiKey), cacheHandler.Reset)
+		apiGroup.Post("/cache/reset", keyauthMiddleware(apiKey), cacheHandler.Reset)
 	} else {
-		api.Post("/cache/reset", cacheHandler.Reset)
+		apiGroup.Post("/cache/reset", cacheHandler.Reset)
 	}
 
 	app.Use(func(c fiber.Ctx) error {

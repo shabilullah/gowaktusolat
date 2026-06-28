@@ -26,6 +26,7 @@ import (
 	"github.com/shabilullah/gowaktusolat/internal/geo"
 	reposqlite "github.com/shabilullah/gowaktusolat/internal/repository/sqlite"
 	"github.com/shabilullah/gowaktusolat/internal/scraper"
+	"github.com/shabilullah/gowaktusolat/internal/service"
 )
 
 func main() {
@@ -61,6 +62,11 @@ func main() {
 		log.Fatalf("Failed to initialize GPS detector: %v", err)
 	}
 
+	// Create service layer — handlers will depend on these interfaces.
+	prayerSvc := service.NewPrayerService(prayerRepo, detector)
+	zoneSvc := service.NewZoneService(zoneRepo, detector)
+	pdfSvc := service.NewPDFService()
+
 	// Seed prayer_zones table if empty (first run).
 	var zoneCount int64
 	execConn, err := pool.Take(context.Background())
@@ -84,7 +90,7 @@ func main() {
 		}
 	}
 
-	// Determine which years need scraping: current year + YEAR env, minus already-scraped.
+	// Determine which years need scraping.
 	wanted := make(map[int]bool)
 	wanted[time.Now().Year()] = true
 	for _, y := range cfg.Years {
@@ -137,7 +143,7 @@ func main() {
 			})
 		},
 	}))
-	api.RegisterRoutes(app, prayerRepo, zoneRepo, detector, cfg.APIKey)
+	api.RegisterRoutes(app, prayerSvc, zoneSvc, pdfSvc, pool, cfg.APIKey)
 
 	go func() {
 		log.Printf("Server starting on port %s (prefork=%v)", cfg.Port, cfg.Prefork)
