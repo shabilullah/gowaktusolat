@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
+	"net"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	json "github.com/goccy/go-json"
@@ -132,8 +137,28 @@ func main() {
 	}))
 	api.RegisterRoutes(app, pool, detector, cfg.APIKey)
 
-	log.Printf("Server starting on port %s (prefork=%v)", cfg.Port, cfg.Prefork)
-	if err := app.Listen(":"+cfg.Port, fiber.ListenConfig{EnablePrefork: cfg.Prefork}); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	go func() {
+		log.Printf("Server starting on port %s (prefork=%v)", cfg.Port, cfg.Prefork)
+		if err := app.Listen(":"+cfg.Port, fiber.ListenConfig{EnablePrefork: cfg.Prefork}); err != nil && !errors.Is(err, net.ErrClosed) {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal for graceful shutdown.
+	waitForShutdown()
+	log.Print("Shutting down server...")
+
+	if err := app.ShutdownWithTimeout(10 * time.Second); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
 	}
 }
+
+// waitForShutdown blocks until an interrupt or termination signal is received.
+// Exposed as a variable so tests can replace it to simulate shutdown.
+var waitForShutdown = func() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(c)
+	<-c
+}
+
