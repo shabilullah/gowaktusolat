@@ -26,7 +26,7 @@ func keyauthMiddleware(key string) fiber.Handler {
 	})
 }
 
-func setupMiddleware(app *fiber.App, group fiber.Router, apiKey string) {
+func setupAPIMiddleware(group fiber.Router, apiKey string) {
 	configuredAPIKey = apiKey
 
 	group.Use(func(c fiber.Ctx) error {
@@ -66,8 +66,4 @@ func setupMiddleware(app *fiber.App, group fiber.Router, apiKey string) {
 			return fiber.Query[bool](c, "invalidateCache")
 		},
 	}))
-
-	app.Use(func(c fiber.Ctx) error {
-		return c.Status(404).JSON(presenter.Message("No route matched. Please see the API documentation."))
-	})
 }
