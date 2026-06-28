@@ -20,7 +20,7 @@ import (
 	"zombiezen.com/go/sqlite"
 	"zombiezen.com/go/sqlite/sqlitex"
 
-	"github.com/shabilullah/gowaktusolat/internal/api"
+	"github.com/shabilullah/gowaktusolat/internal/api/routes"
 	"github.com/shabilullah/gowaktusolat/internal/config"
 	"github.com/shabilullah/gowaktusolat/internal/db"
 	"github.com/shabilullah/gowaktusolat/internal/geo"
@@ -148,7 +148,7 @@ func main() {
 			})
 		},
 	}))
-	api.RegisterRoutes(app, prayerSvc, zoneSvc, pdfSvc, pool, cfg.APIKey)
+	routes.RegisterAll(app, prayerSvc, zoneSvc, pdfSvc, pool, cfg.APIKey)
 
 	go func() {
 		log.Printf("Server starting on port %s (prefork=%v)", cfg.Port, cfg.Prefork)
