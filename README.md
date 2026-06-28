@@ -52,6 +52,7 @@ cp .env.example .env
 | `PREFORK`      | `false`              | Spawn one process per CPU core (`true`/`1`)    |
 | `API_KEY`      | `""`                 | Protects `POST /api/cache/reset` when set; send as `X-API-Key` header |
 | `SEEDER_SCHED` | `""`                 | Cron schedule for auto-scheduler; omit to disable |
+| `YEAR`         | `""`                 | Comma-separated years to scrape on startup (e.g. `2024,2025`); skips already-scraped years |
 
 **CORS examples:**
 
@@ -99,6 +100,7 @@ docker run -d \
   -e PREFORK=false \
   -e API_KEY= \
   -e SEEDER_SCHED= \
+  -e YEAR= \
   ghcr.io/shabilullah/gowaktusolat:master
 
 # Or use docker compose
@@ -108,6 +110,9 @@ docker compose up -d
 The server auto-seeds zones and current-year prayer times on first run (~80s in background).
 Set `SEEDER_SCHED` to a cron expression (e.g. `0 2 1 1 *` for yearly on Jan 1 at 2am) to enable auto-scraping on schedule.
 Omit it or leave empty to disable recurring scrapes.
+
+Set `YEAR` to a comma-separated list of years (e.g. `2024,2025`) to scrape historical data on startup.
+Years already present in the database are skipped — re-scraping is idempotent but avoided.
 
 Edit `docker-compose.yml` to change settings — all environment variables are listed inline with comments.
 The `.env` file is also mounted (optional) for the Go app's built-in `.env` loader.
@@ -152,6 +157,7 @@ CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd
    Environment=PORT=8080
    Environment=DB_PATH=/opt/gowaktusolat/data/waktusolat.db
    Environment=SEEDER_SCHED=0 2 1 1 *
+   Environment=YEAR=2024,2025
    ExecStart=/opt/gowaktusolat/server
    Restart=always
    RestartSec=5
@@ -162,8 +168,7 @@ CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd
 4. Enable and start:
    ```bash
    sudo systemctl enable --now gowaktusolat
-   ```
-   Set `SEEDER_SCHED` in the unit file to enable recurring scrapes. No runtime configuration is needed — the schedule is read from the environment on startup.
+   Set `SEEDER_SCHED` in the unit file to enable recurring scrapes, and `YEAR` to scrape historical years on startup. The server checks which years are already in the database and only scrapes missing ones.
 
 ### Reverse proxy (nginx)
 

@@ -77,3 +77,27 @@ func daysInMonth(year, month int) int {
 	t := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC)
 	return t.Day()
 }
+
+// ScrapedYears returns the set of years that have at least one row in prayer_times.
+func ScrapedYears(pool *sqlitex.Pool) (map[int]bool, error) {
+	conn, err := pool.Take(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("acquire db conn: %w", err)
+	}
+	defer pool.Put(conn)
+
+	years := make(map[int]bool)
+	err = sqlitex.Execute(conn,
+		`SELECT DISTINCT substr(date, 1, 4) FROM prayer_times`,
+		&sqlitex.ExecOptions{
+			ResultFunc: func(stmt *sqlite.Stmt) error {
+				years[stmt.ColumnInt(0)] = true
+				return nil
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query scraped years: %w", err)
+	}
+	return years, nil
+}

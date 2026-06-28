@@ -53,7 +53,7 @@ func main() {
 		log.Fatalf("Failed to initialize GPS detector: %v", err)
 	}
 
-	// First-run: seed zones and scrape current year data if DB is fresh.
+	// Seed prayer_zones table if empty (first run).
 	var zoneCount int64
 	execConn, err := pool.Take(context.Background())
 	if err != nil {
@@ -69,9 +69,29 @@ func main() {
 		if err != nil {
 			log.Printf("Failed to check prayer_zones: %v", err)
 		} else if zoneCount == 0 {
-			log.Printf("First run detected — starting initial seed and scrape for %d", time.Now().Year())
-			go scraper.RunFullScrape(context.Background(), pool, time.Now().Year())
+			log.Print("First run detected — seeding zones")
+			if err := scraper.SeedZones(pool); err != nil {
+				log.Fatalf("Failed to seed zones on first run: %v", err)
+			}
 		}
+	}
+
+	// Determine which years need scraping: current year + YEAR env, minus already-scraped.
+	wanted := make(map[int]bool)
+	wanted[time.Now().Year()] = true
+	for _, y := range cfg.Years {
+		wanted[y] = true
+	}
+	if scraped, err := db.ScrapedYears(pool); err != nil {
+		log.Printf("Failed to check scraped years: %v", err)
+	} else {
+		for y := range scraped {
+			delete(wanted, y)
+		}
+	}
+	for year := range wanted {
+		log.Printf("Year %d not yet scraped — starting scrape", year)
+		go scraper.RunFullScrape(context.Background(), pool, year)
 	}
 
 	app := fiber.New(fiber.Config{

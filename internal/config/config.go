@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -15,6 +16,7 @@ type Config struct {
 	Prefork     bool
 	APIKey      string
 	SeederSched string
+	Years       []int
 }
 
 func Load() *Config {
@@ -27,6 +29,7 @@ func Load() *Config {
 		Prefork:     envBool("PREFORK", false),
 		APIKey:      os.Getenv("API_KEY"),
 		SeederSched: os.Getenv("SEEDER_SCHED"),
+		Years:       parseYears(os.Getenv("YEAR")),
 	}
 }
 
@@ -55,4 +58,24 @@ func envBool(key string, def bool) bool {
 		return def
 	}
 	return v == "true" || v == "1"
+}
+
+func parseYears(raw string) []int {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	var years []int
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		y, err := strconv.Atoi(p)
+		if err != nil {
+			continue
+		}
+		years = append(years, y)
+	}
+	return years
 }

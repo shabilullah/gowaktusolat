@@ -6,13 +6,14 @@ services:
       - "${PORT:-8080}:8080"
     environment:
       - PORT=8080
-      - API_KEY=                         # protects POST /api/cache/reset when set
-      - SEEDER_SCHED=                    # cron schedule for auto-scraping; omit to disable
+      - YEAR=                         # comma-separated years to scrape (e.g. "2025,2026"); scraped on startup if not yet in DB
+      - API_KEY=                      # protects POST /api/cache/reset when set
+      - SEEDER_SCHED=                 # cron schedule for auto-scraping current year; omit to disable
       - DB_PATH=/data/waktusolat.db
-      - CORS_ORIGINS=*                    # comma-separated, "*" for all
-      - PREFORK=false                     # spawn one process per CPU core
-      - TZ=Asia/Kuala_Lumpur              # timezone for logs
+      - CORS_ORIGINS=*                # comma-separated, "*" for all
+      - PREFORK=false                 # spawn one process per CPU core
+      - TZ=Asia/Kuala_Lumpur          # timezone for logs
     volumes:
       - ./data:/data
-      - ./.env:/.env:ro                   # optional — app reads this at runtime too
+      - ./.env:/.env:ro               # optional — app reads this at runtime too
     restart: unless-stopped
