@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/shabilullah/gowaktusolat/internal/api/presenter"
 	"github.com/shabilullah/gowaktusolat/internal/db"
 	"github.com/shabilullah/gowaktusolat/internal/pdf"
 	"zombiezen.com/go/sqlite"
@@ -21,7 +22,6 @@ func (h *JadualSolat) FetchMonth(c fiber.Ctx) error {
 	zone := c.Params("zone")
 	year, month := parseYearMonth(c)
 
-	// If month not explicitly provided, generate full year
 	if c.Query("month") == "" {
 		return h.fetchYear(c, zone, year)
 	}
@@ -32,12 +32,12 @@ func (h *JadualSolat) FetchMonth(c fiber.Ctx) error {
 func (h *JadualSolat) fetchSingleMonth(c fiber.Ctx, zone string, year, month int) error {
 	rows, err := db.QueryPrayerTimes(h.Pool, c.Context(), zone, year, month)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 	if len(rows) == 0 {
-		return c.Status(404).JSON(fiber.Map{
-			"message": fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
-		})
+		return c.Status(404).JSON(presenter.Message(
+			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
+		))
 	}
 
 	daerah := lookupDaerah(h.Pool, zone)
@@ -51,11 +51,10 @@ func (h *JadualSolat) fetchSingleMonth(c fiber.Ctx, zone string, year, month int
 func (h *JadualSolat) fetchYear(c fiber.Ctx, zone string, year int) error {
 	allRows, err := db.QueryPrayerTimesYear(h.Pool, c.Context(), zone, year)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 
-	// Group rows by month from the single result set.
-	monthly := make([][]db.PrayerTimeRow, 13) // index 1–12
+	monthly := make([][]db.PrayerTimeRow, 13)
 	for _, row := range allRows {
 		t, err := time.Parse("2006-01-02", row.Date)
 		if err != nil {

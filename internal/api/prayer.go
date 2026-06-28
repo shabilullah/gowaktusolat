@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/shabilullah/gowaktusolat/internal/api/presenter"
 	"github.com/shabilullah/gowaktusolat/internal/db"
 	"github.com/shabilullah/gowaktusolat/internal/geo"
 	"zombiezen.com/go/sqlite/sqlitex"
@@ -24,28 +25,20 @@ func (h *PrayerTime) FetchMonth(c fiber.Ctx) error {
 
 	rows, err := db.QueryPrayerTimes(h.DB, c.Context(), zone, year, month)
 	if err == db.ErrNoRows {
-		return c.Status(404).JSON(fiber.Map{
-			"message": fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
-		})
+		return c.Status(404).JSON(presenter.Message(
+			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
+		))
 	}
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 
-	prayerTime := make([]fiber.Map, len(rows))
+	items := make([]presenter.PrayerTimeItem, len(rows))
 	for i, r := range rows {
-		prayerTime[i] = mapPrayerTimeRow(r)
+		items[i] = presenter.ItemFromRow(r)
 	}
 
-	return c.JSON(fiber.Map{
-		"prayerTime": prayerTime,
-		"status":     "OK!",
-		"serverTime": time.Now().Format("2006-01-02 15:04:05"),
-		"periodType": "month",
-		"lang":       "",
-		"zone":       zone,
-		"bearing":    "",
-	})
+	return c.JSON(presenter.PrayerTimes(items, zone))
 }
 
 func (h *PrayerTime) FetchDay(c fiber.Ctx) error {
@@ -53,34 +46,28 @@ func (h *PrayerTime) FetchDay(c fiber.Ctx) error {
 	dayStr := c.Params("day")
 	day, err := strconv.Atoi(dayStr)
 	if err != nil || day < 1 || day > 31 {
-		return c.Status(400).JSON(fiber.Map{"message": "Invalid day parameter"})
+		return c.Status(400).JSON(presenter.Message("Invalid day parameter"))
 	}
 
 	year, month := parseYearMonth(c)
 
 	rows, err := db.QueryPrayerTimes(h.DB, c.Context(), zone, year, month)
 	if err == db.ErrNoRows {
-		return c.Status(404).JSON(fiber.Map{
-			"message": fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
-		})
+		return c.Status(404).JSON(presenter.Message(
+			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
+		))
 	}
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 
 	if day > len(rows) {
-		return c.Status(400).JSON(fiber.Map{"message": fmt.Sprintf("Day %d out of range for %s/%d", day, monthName(month), year)})
+		return c.Status(400).JSON(presenter.Message(
+			fmt.Sprintf("Day %d out of range for %s/%d", day, monthName(month), year),
+		))
 	}
 
-	return c.JSON(fiber.Map{
-		"prayerTime": mapPrayerTimeRow(rows[day-1]),
-		"status":     "OK!",
-		"serverTime": time.Now().Format("2006-01-02 15:04:05"),
-		"periodType": "day",
-		"lang":       "",
-		"zone":       zone,
-		"bearing":    "",
-	})
+	return c.JSON(presenter.PrayerDay(presenter.ItemFromRow(rows[day-1]), zone))
 }
 
 func (h *PrayerTime) FetchMonthByGPS(c fiber.Ctx) error {
@@ -89,16 +76,16 @@ func (h *PrayerTime) FetchMonthByGPS(c fiber.Ctx) error {
 
 	lat, err := strconv.ParseFloat(latStr, 64)
 	if err != nil {
-		return c.Status(422).JSON(fiber.Map{"message": "Invalid latitude"})
+		return c.Status(422).JSON(presenter.Message("Invalid latitude"))
 	}
 	lng, err := strconv.ParseFloat(lngStr, 64)
 	if err != nil {
-		return c.Status(422).JSON(fiber.Map{"message": "Invalid longitude"})
+		return c.Status(422).JSON(presenter.Message("Invalid longitude"))
 	}
 
 	result, err := h.Detector.DetectZone(lat, lng)
 	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(404).JSON(presenter.Message(err.Error()))
 	}
 
 	zone := result.Zone
@@ -106,59 +93,20 @@ func (h *PrayerTime) FetchMonthByGPS(c fiber.Ctx) error {
 
 	rows, err := db.QueryPrayerTimes(h.DB, c.Context(), zone, year, month)
 	if err == db.ErrNoRows {
-		return c.Status(404).JSON(fiber.Map{
-			"message": fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
-		})
+		return c.Status(404).JSON(presenter.Message(
+			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
+		))
 	}
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 
-	prayerTime := make([]fiber.Map, len(rows))
+	items := make([]presenter.PrayerTimeItem, len(rows))
 	for i, r := range rows {
-		prayerTime[i] = mapPrayerTimeRow(r)
+		items[i] = presenter.ItemFromRow(r)
 	}
 
-	return c.JSON(fiber.Map{
-		"prayerTime": prayerTime,
-		"status":     "OK!",
-		"serverTime": time.Now().Format("2006-01-02 15:04:05"),
-		"periodType": "month",
-		"lang":       "",
-		"zone":       zone,
-		"bearing":    "",
-	})
-}
-
-func mapPrayerTimeRow(r db.PrayerTimeRow) fiber.Map {
-	t, err := time.Parse("2006-01-02", r.Date)
-	dateStr := r.Date
-	dayStr := ""
-	if err == nil {
-		dateStr = t.Format("02-Jan-2006")
-		dayStr = t.Format("Monday")
-	}
-
-	return fiber.Map{
-		"hijri":   nilIfEmpty(r.Hijri),
-		"date":    dateStr,
-		"day":     dayStr,
-		"imsak":   nilIfEmpty(r.Imsak),
-		"fajr":    nilIfEmpty(r.Fajr),
-		"syuruk":  nilIfEmpty(r.Syuruk),
-		"dhuha":   nilIfEmpty(r.Dhuha),
-		"dhuhr":   nilIfEmpty(r.Dhuhr),
-		"asr":     nilIfEmpty(r.Asr),
-		"maghrib": nilIfEmpty(r.Maghrib),
-		"isha":    nilIfEmpty(r.Isha),
-	}
-}
-
-func nilIfEmpty(s string) interface{} {
-	if s == "" {
-		return nil
-	}
-	return s
+	return c.JSON(presenter.PrayerTimes(items, zone))
 }
 
 func parseYearMonth(c fiber.Ctx) (year, month int) {

@@ -12,6 +12,7 @@ import (
 	"zombiezen.com/go/sqlite"
 	"zombiezen.com/go/sqlite/sqlitex"
 
+	"github.com/shabilullah/gowaktusolat/internal/api/presenter"
 	"github.com/shabilullah/gowaktusolat/internal/geo"
 )
 
@@ -23,22 +24,17 @@ type Zones struct {
 func (h *Zones) Index(c fiber.Ctx) error {
 	conn, err := h.DB.Take(c.Context())
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 	defer h.DB.Put(conn)
-	type zoneResult struct {
-		JakimCode string `json:"jakimCode"`
-		Negeri    string `json:"negeri"`
-		Daerah    string `json:"daerah"`
-	}
 
-	var zones []zoneResult
+	var zones []presenter.ZoneItem
 	if err := sqlitex.ExecuteTransient(
 		conn,
 		"SELECT jakim_code, negeri, daerah FROM prayer_zones ORDER BY jakim_code",
 		&sqlitex.ExecOptions{
 			ResultFunc: func(stmt *sqlite.Stmt) error {
-				zones = append(zones, zoneResult{
+				zones = append(zones, presenter.ZoneItem{
 					JakimCode: stmt.ColumnText(0),
 					Negeri:    stmt.ColumnText(1),
 					Daerah:    stmt.ColumnText(2),
@@ -47,7 +43,7 @@ func (h *Zones) Index(c fiber.Ctx) error {
 			},
 		},
 	); err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 
 	return c.JSON(zones)
@@ -56,25 +52,19 @@ func (h *Zones) Index(c fiber.Ctx) error {
 func (h *Zones) GetByState(c fiber.Ctx) error {
 	conn, err := h.DB.Take(c.Context())
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 	defer h.DB.Put(conn)
 	state := strings.ToUpper(c.Params("state"))
 
-	type zoneResult struct {
-		JakimCode string `json:"jakimCode"`
-		Negeri    string `json:"negeri"`
-		Daerah    string `json:"daerah"`
-	}
-
-	var zones []zoneResult
+	var zones []presenter.ZoneItem
 	if err := sqlitex.ExecuteTransient(
 		conn,
 		"SELECT jakim_code, negeri, daerah FROM prayer_zones WHERE UPPER(jakim_code) LIKE ? ORDER BY jakim_code",
 		&sqlitex.ExecOptions{
 			Args: []interface{}{state + "%"},
 			ResultFunc: func(stmt *sqlite.Stmt) error {
-				zones = append(zones, zoneResult{
+				zones = append(zones, presenter.ZoneItem{
 					JakimCode: stmt.ColumnText(0),
 					Negeri:    stmt.ColumnText(1),
 					Daerah:    stmt.ColumnText(2),
@@ -83,7 +73,7 @@ func (h *Zones) GetByState(c fiber.Ctx) error {
 			},
 		},
 	); err != nil {
-		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
 
 	return c.JSON(zones)
@@ -95,22 +85,22 @@ func (h *Zones) GetByCoordinate(c fiber.Ctx) error {
 
 	lat, err := strconv.ParseFloat(latStr, 64)
 	if err != nil {
-		return c.Status(422).JSON(fiber.Map{"message": "Invalid latitude"})
+		return c.Status(422).JSON(presenter.Message("Invalid latitude"))
 	}
 	lng, err := strconv.ParseFloat(lngStr, 64)
 	if err != nil {
-		return c.Status(422).JSON(fiber.Map{"message": "Invalid longitude"})
+		return c.Status(422).JSON(presenter.Message("Invalid longitude"))
 	}
 
 	result, err := h.Detector.DetectZone(lat, lng)
 	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"message": err.Error()})
+		return c.Status(404).JSON(presenter.Message(err.Error()))
 	}
 
-	return c.JSON(fiber.Map{
-		"zone":     result.Zone,
-		"state":    result.State,
-		"district": result.District,
+	return c.JSON(presenter.ZoneByCoordinateResponse{
+		Zone:     result.Zone,
+		State:    result.State,
+		District: result.District,
 	})
 }
 
@@ -128,9 +118,7 @@ func RegisterRoutes(app *fiber.App, database *sqlitex.Pool, detector *geo.Detect
 	api.Use(func(c fiber.Ctx) error {
 		if configuredAPIKey != "" && fiber.Query[bool](c, "invalidateCache") {
 			if c.Get("X-API-Key") != configuredAPIKey {
-				return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-					"message": "unauthorized",
-				})
+				return c.Status(fiber.StatusUnauthorized).JSON(presenter.Message("unauthorized"))
 			}
 		}
 		return c.Next()
@@ -184,9 +172,7 @@ func RegisterRoutes(app *fiber.App, database *sqlitex.Pool, detector *geo.Detect
 	}
 
 	app.Use(func(c fiber.Ctx) error {
-		return c.Status(404).JSON(fiber.Map{
-			"message": "No route matched. Please see the API documentation.",
-		})
+		return c.Status(404).JSON(presenter.Message("No route matched. Please see the API documentation."))
 	})
 }
 
@@ -199,9 +185,7 @@ func keyauthMiddleware(key string) fiber.Handler {
 			return k == key, nil
 		},
 		ErrorHandler: func(c fiber.Ctx, err error) error {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"message": "unauthorized",
-			})
+			return c.Status(fiber.StatusUnauthorized).JSON(presenter.Message("unauthorized"))
 		},
 	})
 }
