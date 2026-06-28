@@ -78,7 +78,8 @@ func daysInMonth(year, month int) int {
 	return t.Day()
 }
 
-// ScrapedYears returns the set of years that have at least one row in prayer_times.
+// ScrapedYears returns the set of years where every prayer_zone has at least one row
+// in prayer_times. A year is only "complete" when all zones are present.
 func ScrapedYears(pool *sqlitex.Pool) (map[int]bool, error) {
 	conn, err := pool.Take(context.Background())
 	if err != nil {
@@ -88,7 +89,10 @@ func ScrapedYears(pool *sqlitex.Pool) (map[int]bool, error) {
 
 	years := make(map[int]bool)
 	err = sqlitex.Execute(conn,
-		`SELECT DISTINCT substr(date, 1, 4) FROM prayer_times`,
+		`SELECT CAST(substr(date, 1, 4) AS INTEGER) AS year
+		 FROM prayer_times
+		 GROUP BY year
+		 HAVING COUNT(DISTINCT location_code) = (SELECT COUNT(*) FROM prayer_zones)`,
 		&sqlitex.ExecOptions{
 			ResultFunc: func(stmt *sqlite.Stmt) error {
 				years[stmt.ColumnInt(0)] = true
