@@ -9,74 +9,51 @@ import (
 	"github.com/gofiber/fiber/v3/extractors"
 	"github.com/gofiber/fiber/v3/middleware/cache"
 	"github.com/gofiber/fiber/v3/middleware/keyauth"
-	"zombiezen.com/go/sqlite"
-	"zombiezen.com/go/sqlite/sqlitex"
 
 	"github.com/shabilullah/gowaktusolat/internal/api/presenter"
 	"github.com/shabilullah/gowaktusolat/internal/geo"
+	reposqlite "github.com/shabilullah/gowaktusolat/internal/repository/sqlite"
 )
 
 type Zones struct {
-	DB       *sqlitex.Pool
+	ZoneRepo *reposqlite.ZoneRepo
 	Detector *geo.Detector
 }
 
 func (h *Zones) Index(c fiber.Ctx) error {
-	conn, err := h.DB.Take(c.Context())
+	zones, err := h.ZoneRepo.ListAll(c.Context())
 	if err != nil {
 		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
-	defer h.DB.Put(conn)
 
-	var zones []presenter.ZoneItem
-	if err := sqlitex.ExecuteTransient(
-		conn,
-		"SELECT jakim_code, negeri, daerah FROM prayer_zones ORDER BY jakim_code",
-		&sqlitex.ExecOptions{
-			ResultFunc: func(stmt *sqlite.Stmt) error {
-				zones = append(zones, presenter.ZoneItem{
-					JakimCode: stmt.ColumnText(0),
-					Negeri:    stmt.ColumnText(1),
-					Daerah:    stmt.ColumnText(2),
-				})
-				return nil
-			},
-		},
-	); err != nil {
-		return c.Status(500).JSON(presenter.Message(err.Error()))
+	items := make([]presenter.ZoneItem, len(zones))
+	for i, z := range zones {
+		items[i] = presenter.ZoneItem{
+			JakimCode: z.JakimCode,
+			Negeri:    z.Negeri,
+			Daerah:    z.Daerah,
+		}
 	}
-
-	return c.JSON(zones)
+	return c.JSON(items)
 }
 
 func (h *Zones) GetByState(c fiber.Ctx) error {
-	conn, err := h.DB.Take(c.Context())
+	state := strings.ToUpper(c.Params("state"))
+
+	zones, err := h.ZoneRepo.ListByState(c.Context(), state)
 	if err != nil {
 		return c.Status(500).JSON(presenter.Message(err.Error()))
 	}
-	defer h.DB.Put(conn)
-	state := strings.ToUpper(c.Params("state"))
 
-	var zones []presenter.ZoneItem
-	if err := sqlitex.ExecuteTransient(
-		conn,
-		"SELECT jakim_code, negeri, daerah FROM prayer_zones WHERE UPPER(jakim_code) LIKE ? ORDER BY jakim_code",
-		&sqlitex.ExecOptions{
-			Args: []interface{}{state + "%"},
-			ResultFunc: func(stmt *sqlite.Stmt) error {
-				zones = append(zones, presenter.ZoneItem{
-					JakimCode: stmt.ColumnText(0),
-					Negeri:    stmt.ColumnText(1),
-					Daerah:    stmt.ColumnText(2),
-				})
-				return nil
-			},
-		},
-	); err != nil {
-		return c.Status(500).JSON(presenter.Message(err.Error()))
+	items := make([]presenter.ZoneItem, len(zones))
+	for i, z := range zones {
+		items[i] = presenter.ZoneItem{
+			JakimCode: z.JakimCode,
+			Negeri:    z.Negeri,
+			Daerah:    z.Daerah,
+		}
 	}
-
-	return c.JSON(zones)
+	return c.JSON(items)
 }
 
 func (h *Zones) GetByCoordinate(c fiber.Ctx) error {
@@ -104,7 +81,7 @@ func (h *Zones) GetByCoordinate(c fiber.Ctx) error {
 	})
 }
 
-func RegisterRoutes(app *fiber.App, database *sqlitex.Pool, detector *geo.Detector, apiKey string) {
+func RegisterRoutes(app *fiber.App, prayerRepo *reposqlite.PrayerTimeRepo, zoneRepo *reposqlite.ZoneRepo, detector *geo.Detector, apiKey string) {
 	configuredAPIKey = apiKey
 
 	api := app.Group("/api")
@@ -114,7 +91,6 @@ func RegisterRoutes(app *fiber.App, database *sqlitex.Pool, detector *geo.Detect
 		return c.Next()
 	})
 
-	// Protect ?invalidateCache=true with API key when configured
 	api.Use(func(c fiber.Ctx) error {
 		if configuredAPIKey != "" && fiber.Query[bool](c, "invalidateCache") {
 			if c.Get("X-API-Key") != configuredAPIKey {
@@ -148,18 +124,18 @@ func RegisterRoutes(app *fiber.App, database *sqlitex.Pool, detector *geo.Detect
 		},
 	}))
 
-	lastUpdateHandler := &LastUpdate{DB: database}
+	lastUpdateHandler := &LastUpdate{DB: prayerRepo.Pool}
 	api.Get("/last-update", lastUpdateHandler.Get)
 
-	jadualHandler := &JadualSolat{Pool: database}
+	jadualHandler := &JadualSolat{PrayerRepo: prayerRepo, ZoneRepo: zoneRepo}
 	api.Get("/jadual_solat/:zone", jadualHandler.FetchMonth)
 
-	prayerHandler := &PrayerTime{DB: database, Detector: detector}
+	prayerHandler := &PrayerTime{Repo: prayerRepo, Detector: detector}
 	api.Get("/solat/:zone", prayerHandler.FetchMonth)
 	api.Get("/solat/:zone/:day", prayerHandler.FetchDay)
 	api.Get("/solat/gps/:lat/:long", prayerHandler.FetchMonthByGPS)
 
-	zonesHandler := &Zones{DB: database, Detector: detector}
+	zonesHandler := &Zones{ZoneRepo: zoneRepo, Detector: detector}
 	api.Get("/zones", zonesHandler.Index)
 	api.Get("/zones/:lat/:long", zonesHandler.GetByCoordinate)
 	api.Get("/zones/:state", zonesHandler.GetByState)

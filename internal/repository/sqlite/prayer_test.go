@@ -1,15 +1,16 @@
-package db
+package sqlite
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/shabilullah/gowaktusolat/internal/repository"
 	"zombiezen.com/go/sqlite"
 	"zombiezen.com/go/sqlite/sqlitex"
 )
 
-func setupQueryTestDB(t *testing.T) *sqlitex.Pool {
+func setupQueryTestDB(t *testing.T) *PrayerTimeRepo {
 	t.Helper()
 	pool, err := sqlitex.NewPool("file::memory:?cache=shared", sqlitex.PoolOptions{
 		Flags:    sqlite.OpenReadWrite | sqlite.OpenCreate | sqlite.OpenWAL | sqlite.OpenURI,
@@ -18,6 +19,7 @@ func setupQueryTestDB(t *testing.T) *sqlitex.Pool {
 	if err != nil {
 		t.Fatalf("open pool: %v", err)
 	}
+	t.Cleanup(func() { pool.Close() })
 
 	conn, err := pool.Take(context.Background())
 	if err != nil {
@@ -52,7 +54,6 @@ func setupQueryTestDB(t *testing.T) *sqlitex.Pool {
 		t.Fatalf("create index: %v", err)
 	}
 
-	// Insert test data: SGR01 for June 2026 (first 5 days)
 	now := time.Now().UTC().Format(time.RFC3339)
 	testData := []struct {
 		date, zone, fajr, dhuhr, asr, maghrib, isha string
@@ -62,7 +63,6 @@ func setupQueryTestDB(t *testing.T) *sqlitex.Pool {
 		{"2026-06-03", "SGR01", "05:49:00", "13:14:00", "16:39:00", "19:23:00", "20:38:00"},
 		{"2026-06-04", "SGR01", "05:49:00", "13:15:00", "16:40:00", "19:23:00", "20:38:00"},
 		{"2026-06-05", "SGR01", "05:50:00", "13:15:00", "16:40:00", "19:23:00", "20:38:00"},
-		// JHR01 for June 2026
 		{"2026-06-01", "JHR01", "05:39:00", "13:02:00", "16:27:00", "19:09:00", "20:24:00"},
 	}
 
@@ -80,23 +80,21 @@ func setupQueryTestDB(t *testing.T) *sqlitex.Pool {
 		}
 	}
 
-	return pool
+	return &PrayerTimeRepo{Pool: pool}
 }
 
 func TestQueryPrayerTimes(t *testing.T) {
-	pool := setupQueryTestDB(t)
-	defer pool.Close()
+	repo := setupQueryTestDB(t)
 
-	rows, err := QueryPrayerTimes(pool, context.Background(), "SGR01", 2026, 6)
+	rows, err := repo.Query(context.Background(), "SGR01", 2026, 6)
 	if err != nil {
-		t.Fatalf("QueryPrayerTimes failed: %v", err)
+		t.Fatalf("Query failed: %v", err)
 	}
 
 	if len(rows) != 5 {
 		t.Errorf("got %d rows, want 5", len(rows))
 	}
 
-	// First row should be June 1
 	if rows[0].Date != "2026-06-01" {
 		t.Errorf("first date = %s, want 2026-06-01", rows[0].Date)
 	}
@@ -104,44 +102,39 @@ func TestQueryPrayerTimes(t *testing.T) {
 		t.Errorf("first fajr = %s, want 05:49:00", rows[0].Fajr)
 	}
 
-	// Last row should be June 5
 	if rows[4].Date != "2026-06-05" {
 		t.Errorf("last date = %s, want 2026-06-05", rows[4].Date)
 	}
 }
 
 func TestQueryPrayerTimesDifferentZone(t *testing.T) {
-	pool := setupQueryTestDB(t)
-	defer pool.Close()
+	repo := setupQueryTestDB(t)
 
-	rows, err := QueryPrayerTimes(pool, context.Background(), "JHR01", 2026, 6)
+	rows, err := repo.Query(context.Background(), "JHR01", 2026, 6)
 	if err != nil {
-		t.Fatalf("QueryPrayerTimes failed: %v", err)
+		t.Fatalf("Query failed: %v", err)
 	}
 
 	if len(rows) != 1 {
 		t.Errorf("got %d rows for JHR01, want 1", len(rows))
 	}
-	// Rows are already filtered by zone — just verify count
 	_ = rows[0]
 }
 
 func TestQueryPrayerTimesNoData(t *testing.T) {
-	pool := setupQueryTestDB(t)
-	defer pool.Close()
+	repo := setupQueryTestDB(t)
 
-	_, err := QueryPrayerTimes(pool, context.Background(), "XXXXX", 2026, 6)
-	if err != ErrNoRows {
+	_, err := repo.Query(context.Background(), "XXXXX", 2026, 6)
+	if err != repository.ErrNoRows {
 		t.Errorf("expected ErrNoRows, got %v", err)
 	}
 }
 
 func TestQueryPrayerTimesDifferentMonth(t *testing.T) {
-	pool := setupQueryTestDB(t)
-	defer pool.Close()
+	repo := setupQueryTestDB(t)
 
-	_, err := QueryPrayerTimes(pool, context.Background(), "SGR01", 2026, 1)
-	if err != ErrNoRows {
+	_, err := repo.Query(context.Background(), "SGR01", 2026, 1)
+	if err != repository.ErrNoRows {
 		t.Errorf("expected ErrNoRows for January (no data), got %v", err)
 	}
 }
@@ -152,7 +145,7 @@ func TestDaysInMonth(t *testing.T) {
 	}{
 		{2026, 1, 31},
 		{2026, 2, 28},
-		{2024, 2, 29}, // leap year
+		{2024, 2, 29},
 		{2026, 4, 30},
 		{2026, 6, 30},
 		{2026, 12, 31},
@@ -167,26 +160,23 @@ func TestDaysInMonth(t *testing.T) {
 }
 
 func TestQueryPrayerTimesYear(t *testing.T) {
-	pool := setupQueryTestDB(t)
-	defer pool.Close()
+	repo := setupQueryTestDB(t)
 
-	rows, err := QueryPrayerTimesYear(pool, context.Background(), "SGR01", 2026)
+	rows, err := repo.QueryYear(context.Background(), "SGR01", 2026)
 	if err != nil {
-		t.Fatalf("QueryPrayerTimesYear failed: %v", err)
+		t.Fatalf("QueryYear failed: %v", err)
 	}
 
 	if len(rows) != 5 {
 		t.Errorf("got %d rows for SGR01 2026, want 5", len(rows))
 	}
 
-	// All rows should be from June 2026
 	for _, r := range rows {
 		if len(r.Date) < 7 || r.Date[:7] != "2026-06" {
 			t.Errorf("row date %s is outside expected month 2026-06", r.Date)
 		}
 	}
 
-	// Ordered by date ascending
 	if rows[0].Date != "2026-06-01" {
 		t.Errorf("first date = %s, want 2026-06-01", rows[0].Date)
 	}
@@ -196,12 +186,11 @@ func TestQueryPrayerTimesYear(t *testing.T) {
 }
 
 func TestQueryPrayerTimesYearMultipleZones(t *testing.T) {
-	pool := setupQueryTestDB(t)
-	defer pool.Close()
+	repo := setupQueryTestDB(t)
 
-	rows, err := QueryPrayerTimesYear(pool, context.Background(), "JHR01", 2026)
+	rows, err := repo.QueryYear(context.Background(), "JHR01", 2026)
 	if err != nil {
-		t.Fatalf("QueryPrayerTimesYear failed: %v", err)
+		t.Fatalf("QueryYear failed: %v", err)
 	}
 
 	if len(rows) != 1 {
@@ -213,21 +202,19 @@ func TestQueryPrayerTimesYearMultipleZones(t *testing.T) {
 }
 
 func TestQueryPrayerTimesYearNoData(t *testing.T) {
-	pool := setupQueryTestDB(t)
-	defer pool.Close()
+	repo := setupQueryTestDB(t)
 
-	_, err := QueryPrayerTimesYear(pool, context.Background(), "XXXXX", 2026)
-	if err != ErrNoRows {
+	_, err := repo.QueryYear(context.Background(), "XXXXX", 2026)
+	if err != repository.ErrNoRows {
 		t.Errorf("expected ErrNoRows, got %v", err)
 	}
 }
 
 func TestQueryPrayerTimesYearDifferentYear(t *testing.T) {
-	pool := setupQueryTestDB(t)
-	defer pool.Close()
+	repo := setupQueryTestDB(t)
 
-	_, err := QueryPrayerTimesYear(pool, context.Background(), "SGR01", 2025)
-	if err != ErrNoRows {
+	_, err := repo.QueryYear(context.Background(), "SGR01", 2025)
+	if err != repository.ErrNoRows {
 		t.Errorf("expected ErrNoRows for 2025 (no data), got %v", err)
 	}
 }

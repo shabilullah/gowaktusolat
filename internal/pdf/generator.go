@@ -5,18 +5,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/shabilullah/gowaktusolat/internal/db"
+	"github.com/shabilullah/gowaktusolat/internal/repository"
 )
 
 // GenerateMonth produces a single-page PDF for one zone/month.
-func GenerateMonth(zone, daerah string, year, month int, rows []db.PrayerTimeRow) []byte {
+func GenerateMonth(zone, daerah string, year, month int, rows []repository.PrayerTimeRow) []byte {
 	content := generatePageContent(zone, daerah, year, month, rows)
 	return buildSinglePagePDF(content)
 }
 
 // GenerateYear produces a multi-page PDF for one zone across 12 months.
 // monthly is indexed 1–12; monthly[0] is ignored.
-func GenerateYear(zone, daerah string, year int, monthly [][]db.PrayerTimeRow) []byte {
+func GenerateYear(zone, daerah string, year int, monthly [][]repository.PrayerTimeRow) []byte {
 	contents := make([]string, 0, 12)
 	for month := 1; month <= 12; month++ {
 		contents = append(contents, generatePageContent(zone, daerah, year, month, monthly[month]))
@@ -25,7 +25,7 @@ func GenerateYear(zone, daerah string, year int, monthly [][]db.PrayerTimeRow) [
 }
 
 // generatePageContent returns the PDF content stream for one month page.
-func generatePageContent(zone, daerah string, year, month int, rows []db.PrayerTimeRow) string {
+func generatePageContent(zone, daerah string, year, month int, rows []repository.PrayerTimeRow) string {
 	headers := []string{"Tarikh", "Subuh", "Syuruk", "Zohor", "Asar", "Maghrib", "Isyak"}
 	numCols := len(headers)
 

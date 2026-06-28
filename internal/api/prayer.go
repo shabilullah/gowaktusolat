@@ -8,13 +8,13 @@ import (
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/shabilullah/gowaktusolat/internal/api/presenter"
-	"github.com/shabilullah/gowaktusolat/internal/db"
 	"github.com/shabilullah/gowaktusolat/internal/geo"
-	"zombiezen.com/go/sqlite/sqlitex"
+	"github.com/shabilullah/gowaktusolat/internal/repository"
+	reposqlite "github.com/shabilullah/gowaktusolat/internal/repository/sqlite"
 )
 
 type PrayerTime struct {
-	DB       *sqlitex.Pool
+	Repo     *reposqlite.PrayerTimeRepo
 	Detector *geo.Detector
 	BasePath string
 }
@@ -23,8 +23,8 @@ func (h *PrayerTime) FetchMonth(c fiber.Ctx) error {
 	zone := c.Params("zone")
 	year, month := parseYearMonth(c)
 
-	rows, err := db.QueryPrayerTimes(h.DB, c.Context(), zone, year, month)
-	if err == db.ErrNoRows {
+	rows, err := h.Repo.Query(c.Context(), zone, year, month)
+	if err == repository.ErrNoRows {
 		return c.Status(404).JSON(presenter.Message(
 			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
 		))
@@ -51,8 +51,8 @@ func (h *PrayerTime) FetchDay(c fiber.Ctx) error {
 
 	year, month := parseYearMonth(c)
 
-	rows, err := db.QueryPrayerTimes(h.DB, c.Context(), zone, year, month)
-	if err == db.ErrNoRows {
+	rows, err := h.Repo.Query(c.Context(), zone, year, month)
+	if err == repository.ErrNoRows {
 		return c.Status(404).JSON(presenter.Message(
 			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
 		))
@@ -91,8 +91,8 @@ func (h *PrayerTime) FetchMonthByGPS(c fiber.Ctx) error {
 	zone := result.Zone
 	year, month := parseYearMonth(c)
 
-	rows, err := db.QueryPrayerTimes(h.DB, c.Context(), zone, year, month)
-	if err == db.ErrNoRows {
+	rows, err := h.Repo.Query(c.Context(), zone, year, month)
+	if err == repository.ErrNoRows {
 		return c.Status(404).JSON(presenter.Message(
 			fmt.Sprintf("No data found for zone: %s for %s/%d", zone, strings.ToUpper(monthName(month)), year),
 		))

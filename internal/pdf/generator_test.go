@@ -3,11 +3,11 @@ package pdf
 import (
 	"testing"
 
-	"github.com/shabilullah/gowaktusolat/internal/db"
+	"github.com/shabilullah/gowaktusolat/internal/repository"
 )
 
 func TestGenerateMonth_ProducesValidPDFHeader(t *testing.T) {
-	rows := []db.PrayerTimeRow{
+	rows := []repository.PrayerTimeRow{
 		{Date: "2026-06-01", Fajr: "05:49:00", Syuruk: "07:08:00", Dhuhr: "13:14:00", Asr: "16:39:00", Maghrib: "19:22:00", Isha: "20:37:00"},
 		{Date: "2026-06-02", Fajr: "05:49:00", Syuruk: "07:08:00", Dhuhr: "13:14:00", Asr: "16:39:00", Maghrib: "19:23:00", Isha: "20:38:00"},
 	}
@@ -45,7 +45,7 @@ func TestGenerateMonth_ProducesValidPDFHeader(t *testing.T) {
 }
 
 func TestGenerateMonth_NoDaerah(t *testing.T) {
-	rows := []db.PrayerTimeRow{
+	rows := []repository.PrayerTimeRow{
 		{Date: "2026-06-01", Fajr: "05:49:00", Syuruk: "07:08:00", Dhuhr: "13:14:00", Asr: "16:39:00", Maghrib: "19:22:00", Isha: "20:37:00"},
 	}
 
@@ -74,9 +74,9 @@ func TestGenerateMonth_EmptyRows(t *testing.T) {
 }
 
 func TestGenerateYear_ProducesMultiPagePDF(t *testing.T) {
-	monthly := make([][]db.PrayerTimeRow, 13)
+	monthly := make([][]repository.PrayerTimeRow, 13)
 	for m := 1; m <= 12; m++ {
-		monthly[m] = []db.PrayerTimeRow{
+		monthly[m] = []repository.PrayerTimeRow{
 			{Date: "2026-06-01", Fajr: "05:49:00", Syuruk: "07:08:00", Dhuhr: "13:14:00", Asr: "16:39:00", Maghrib: "19:22:00", Isha: "20:37:00"},
 		}
 	}

@@ -24,6 +24,7 @@ import (
 	"github.com/shabilullah/gowaktusolat/internal/config"
 	"github.com/shabilullah/gowaktusolat/internal/db"
 	"github.com/shabilullah/gowaktusolat/internal/geo"
+	reposqlite "github.com/shabilullah/gowaktusolat/internal/repository/sqlite"
 	"github.com/shabilullah/gowaktusolat/internal/scraper"
 )
 
@@ -43,9 +44,11 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	// Create concrete repository implementations.
+	prayerRepo := &reposqlite.PrayerTimeRepo{Pool: pool}
+	zoneRepo := &reposqlite.ZoneRepo{Pool: pool}
+
 	// SEEDER_SCHED env var controls the cron schedule for auto-scraping.
-	// When set, the scheduler runs with the given schedule.
-	// When empty, no scheduled scraping occurs.
 	sched := scraper.NewScheduler(pool, cfg.SeederSched)
 	if cfg.SeederSched != "" {
 		log.Printf("Auto-scraping enabled with schedule: %s", cfg.SeederSched)
@@ -87,7 +90,7 @@ func main() {
 	for _, y := range cfg.Years {
 		wanted[y] = true
 	}
-	if scraped, err := db.ScrapedYears(pool); err != nil {
+	if scraped, err := prayerRepo.ScrapedYears(context.Background()); err != nil {
 		log.Printf("Failed to check scraped years: %v", err)
 	} else {
 		for y := range scraped {
@@ -115,7 +118,6 @@ func main() {
 	app.Use(limiter.New(limiter.Config{
 		MaxFunc: func(c fiber.Ctx) int {
 			path := c.Path()
-			// PDF generation is expensive — tighter limit
 			if strings.Contains(path, "jadual_solat") {
 				return 10
 			}
@@ -135,7 +137,7 @@ func main() {
 			})
 		},
 	}))
-	api.RegisterRoutes(app, pool, detector, cfg.APIKey)
+	api.RegisterRoutes(app, prayerRepo, zoneRepo, detector, cfg.APIKey)
 
 	go func() {
 		log.Printf("Server starting on port %s (prefork=%v)", cfg.Port, cfg.Prefork)
@@ -153,8 +155,6 @@ func main() {
 	}
 }
 
-// waitForShutdown blocks until an interrupt or termination signal is received.
-// Exposed as a variable so tests can replace it to simulate shutdown.
 var waitForShutdown = func() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)

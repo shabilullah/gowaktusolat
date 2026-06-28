@@ -3,7 +3,7 @@ package presenter
 import (
 	"time"
 
-	"github.com/shabilullah/gowaktusolat/internal/db"
+	"github.com/shabilullah/gowaktusolat/internal/repository"
 )
 
 // PrayerTimeItem is a single prayer-time entry in JSON responses.
@@ -44,7 +44,7 @@ type PrayerDayResponse struct {
 }
 
 // ItemFromRow converts a DB prayer-time row into a JSON-ready item.
-func ItemFromRow(r db.PrayerTimeRow) PrayerTimeItem {
+func ItemFromRow(r repository.PrayerTimeRow) PrayerTimeItem {
 	t, err := time.Parse("2006-01-02", r.Date)
 	dateStr := r.Date
 	dayStr := ""

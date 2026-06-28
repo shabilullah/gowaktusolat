@@ -1,43 +1,32 @@
-package db
+package sqlite
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
+	"github.com/shabilullah/gowaktusolat/internal/repository"
 	"zombiezen.com/go/sqlite"
 	"zombiezen.com/go/sqlite/sqlitex"
 )
 
-// ErrNoRows is returned when a query returns no results.
-var ErrNoRows = errors.New("db: no rows in result set")
-
-type PrayerTimeRow struct {
-	Date    string
-	Hijri   string
-	Imsak   string
-	Fajr    string
-	Syuruk  string
-	Dhuha   string
-	Dhuhr   string
-	Asr     string
-	Maghrib string
-	Isha    string
+// PrayerTimeRepo implements repository.PrayerTimeRepository backed by SQLite.
+type PrayerTimeRepo struct {
+	Pool *sqlitex.Pool
 }
 
-func QueryPrayerTimes(pool *sqlitex.Pool, ctx context.Context, zone string, year, month int) ([]PrayerTimeRow, error) {
-	conn, err := pool.Take(ctx)
+func (r *PrayerTimeRepo) Query(ctx context.Context, zone string, year, month int) ([]repository.PrayerTimeRow, error) {
+	conn, err := r.Pool.Take(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("acquire db conn: %w", err)
 	}
-	defer pool.Put(conn)
+	defer r.Pool.Put(conn)
 
 	startDate := fmt.Sprintf("%d-%02d-01", year, month)
 	lastDay := daysInMonth(year, month)
 	endDate := fmt.Sprintf("%d-%02d-%02d", year, month, lastDay)
 
-	var results []PrayerTimeRow
+	var results []repository.PrayerTimeRow
 	err = sqlitex.Execute(conn,
 		`SELECT date, hijri, imsak, fajr, syuruk, dhuha, dhuhr, asr, maghrib, isha
 		 FROM prayer_times
@@ -46,7 +35,7 @@ func QueryPrayerTimes(pool *sqlitex.Pool, ctx context.Context, zone string, year
 		&sqlitex.ExecOptions{
 			Args: []interface{}{zone, startDate, endDate},
 			ResultFunc: func(stmt *sqlite.Stmt) error {
-				results = append(results, PrayerTimeRow{
+				results = append(results, repository.PrayerTimeRow{
 					Date:    stmt.ColumnText(0),
 					Hijri:   stmt.ColumnText(1),
 					Imsak:   stmt.ColumnText(2),
@@ -67,25 +56,25 @@ func QueryPrayerTimes(pool *sqlitex.Pool, ctx context.Context, zone string, year
 	}
 
 	if len(results) == 0 {
-		return nil, ErrNoRows
+		return nil, repository.ErrNoRows
 	}
 
 	return results, nil
 }
 
-// QueryPrayerTimesYear returns all prayer times for a zone for the whole year,
+// QueryYear returns all prayer times for a zone for the whole year,
 // ordered by date. Used by the year-PDF endpoint to avoid N+1 monthly queries.
-func QueryPrayerTimesYear(pool *sqlitex.Pool, ctx context.Context, zone string, year int) ([]PrayerTimeRow, error) {
-	conn, err := pool.Take(ctx)
+func (r *PrayerTimeRepo) QueryYear(ctx context.Context, zone string, year int) ([]repository.PrayerTimeRow, error) {
+	conn, err := r.Pool.Take(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("acquire db conn: %w", err)
 	}
-	defer pool.Put(conn)
+	defer r.Pool.Put(conn)
 
 	startDate := fmt.Sprintf("%d-01-01", year)
 	endDate := fmt.Sprintf("%d-12-31", year)
 
-	var results []PrayerTimeRow
+	var results []repository.PrayerTimeRow
 	err = sqlitex.Execute(conn,
 		`SELECT date, hijri, imsak, fajr, syuruk, dhuha, dhuhr, asr, maghrib, isha
 		 FROM prayer_times
@@ -94,7 +83,7 @@ func QueryPrayerTimesYear(pool *sqlitex.Pool, ctx context.Context, zone string, 
 		&sqlitex.ExecOptions{
 			Args: []interface{}{zone, startDate, endDate},
 			ResultFunc: func(stmt *sqlite.Stmt) error {
-				results = append(results, PrayerTimeRow{
+				results = append(results, repository.PrayerTimeRow{
 					Date:    stmt.ColumnText(0),
 					Hijri:   stmt.ColumnText(1),
 					Imsak:   stmt.ColumnText(2),
@@ -115,25 +104,20 @@ func QueryPrayerTimesYear(pool *sqlitex.Pool, ctx context.Context, zone string, 
 	}
 
 	if len(results) == 0 {
-		return nil, ErrNoRows
+		return nil, repository.ErrNoRows
 	}
 
 	return results, nil
 }
 
-func daysInMonth(year, month int) int {
-	t := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC)
-	return t.Day()
-}
-
-// ScrapedYears returns the set of years where every prayer_zone has at least one row
-// in prayer_times. A year is only "complete" when all zones are present.
-func ScrapedYears(pool *sqlitex.Pool) (map[int]bool, error) {
-	conn, err := pool.Take(context.Background())
+// ScrapedYears returns the set of years where every prayer_zone has at least one
+// row in prayer_times. A year is only "complete" when all zones are present.
+func (r *PrayerTimeRepo) ScrapedYears(ctx context.Context) (map[int]bool, error) {
+	conn, err := r.Pool.Take(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("acquire db conn: %w", err)
 	}
-	defer pool.Put(conn)
+	defer r.Pool.Put(conn)
 
 	years := make(map[int]bool)
 	err = sqlitex.Execute(conn,
@@ -152,4 +136,9 @@ func ScrapedYears(pool *sqlitex.Pool) (map[int]bool, error) {
 		return nil, fmt.Errorf("query scraped years: %w", err)
 	}
 	return years, nil
+}
+
+func daysInMonth(year, month int) int {
+	t := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC)
+	return t.Day()
 }
