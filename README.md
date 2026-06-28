@@ -68,16 +68,13 @@ CORS_ORIGINS=https://myapp.com,https://admin.myapp.com,https://api.myapp.com
 
 | Driver | Package | CGO | Notes |
 |--------|---------|-----|-------|
-| SQLite | `modernc.org/sqlite` | No | Pure Go, WAL mode enabled, single-file, no external deps |
+| SQLite | `zombiezen.com/go/sqlite` | Yes | Native API, connection pooling via `sqlitex.Pool`, WAL mode |
 
-The driver is fixed to SQLite — there is no driver abstraction layer. All code uses
-`sql.Open("sqlite", path)`. In-memory databases (`:memory:`) are used in tests.
+All code uses the `zombiezen.com/go/sqlite` native API — there is no `database/sql` abstraction. A `sqlitex.Pool` (4 connections for the server, 1 for the scraper) is shared across all handlers via `pool.Take(ctx)` / `pool.Put(conn)`. In-memory databases with `?cache=shared` are used in tests.
 
-**Limitations with SQLite:**
+**JSON encoding** uses `goccy/go-json` across the board — both via `fiber.Config{JSONEncoder, JSONDecoder}` for API responses, and `client.SetJSONUnmarshal` in the scraper.
 
-- **Single writer**: WAL mode allows concurrent reads but serializes writes. Writes are rare (settings changes, scheduled scraper) so contention is negligible.
-- **Prefork**: Safe to enable — each worker opens its own connection pool and WAL serializes the occasional write.
-- **File locking**: Running the scraper and server against the same DB simultaneously works (WAL mode).
+**Concurrency**: The pool serializes writes across connections while allowing concurrent reads. Writes are rare (settings, scheduled scraper) so contention is negligible. Prefork is safe — each worker process gets its own pool.
 
 ### Project layout
 
@@ -126,9 +123,10 @@ Images are published automatically to `ghcr.io/shabilullah/gowaktusolat` on ever
 ### Binary
 
 ```bash
-# Cross-compile for Linux AMD64
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o server ./cmd/server
-GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd/scraper
+# Requires CGO (zombiezen.com/go/sqlite wraps native SQLite).
+# Cross-compile for Linux AMD64:
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o server ./cmd/server
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o scraper ./cmd/scraper
 ```
 
 ### Systemd
