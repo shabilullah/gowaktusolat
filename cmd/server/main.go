@@ -57,12 +57,17 @@ func main() {
 	sched.Start()
 	defer sched.Stop()
 
+	// Seed GeoJSON polygon data (first-run, idempotent).
+	if err := geo.SeedFromGeoJSON(pool); err != nil {
+		log.Printf("Warning: failed to seed GeoJSON polygons: %v", err)
+	}
+
 	detector, err := geo.NewDetector(pool)
 	if err != nil {
 		log.Fatalf("Failed to initialize GPS detector: %v", err)
 	}
 
-	// Create service layer — handlers will depend on these interfaces.
+	// Create service layer — handlers depend on these interfaces.
 	prayerSvc := service.NewPrayerService(prayerRepo, detector)
 	zoneSvc := service.NewZoneService(zoneRepo, detector)
 	pdfSvc := service.NewPDFService()

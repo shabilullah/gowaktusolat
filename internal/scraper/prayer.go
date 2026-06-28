@@ -3,11 +3,12 @@ package scraper
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
 	json "github.com/goccy/go-json"
-	"github.com/gofiber/fiber/v3/client"
 	"zombiezen.com/go/sqlite/sqlitex"
 )
 
@@ -25,6 +26,8 @@ var malayMonths = map[string]string{
 	"Nov":  "Nov",
 	"Dis":  "Dec",
 }
+
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 type esolatResponse struct {
 	PrayerTime json.RawMessage `json:"prayerTime"`
@@ -65,24 +68,26 @@ func FetchPrayerTimes(zoneCode string, year int) ([]PrayerTime, error) {
 		zoneCode,
 	)
 
-	c := client.New()
-	c.SetTimeout(30 * time.Second)
-	c.SetHeader("Content-Type", "application/x-www-form-urlencoded")
-	c.SetJSONUnmarshal(json.Unmarshal)
-	c.SetRetryConfig(&client.RetryConfig{
-		InitialInterval: 2 * time.Second,
-		MaxRetryCount:   3,
-	})
+	body := strings.NewReader(fmt.Sprintf("datestart=%d-01-01&dateend=%d-12-31", year, year))
+	req, err := http.NewRequest("POST", u, body)
+	if err != nil {
+		return nil, fmt.Errorf("create request for %s: %w", zoneCode, err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := c.Post(u, client.Config{
-		Body: fmt.Sprintf("datestart=%d-01-01&dateend=%d-12-31", year, year),
-	})
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch prayer times for %s: %w", zoneCode, err)
 	}
+	defer resp.Body.Close()
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response for %s: %w", zoneCode, err)
+	}
 
 	var esolatResp esolatResponse
-	if err := json.Unmarshal(resp.Body(), &esolatResp); err != nil {
+	if err := json.Unmarshal(respBytes, &esolatResp); err != nil {
 		return nil, fmt.Errorf("unmarshal response for %s: %w", zoneCode, err)
 	}
 
@@ -113,6 +118,7 @@ func FetchPrayerTimes(zoneCode string, year int) ([]PrayerTime, error) {
 	}
 	return times, nil
 }
+
 func parseDate(malayDate string) string {
 	for malay, eng := range malayMonths {
 		malayDate = strings.Replace(malayDate, malay, eng, 1)

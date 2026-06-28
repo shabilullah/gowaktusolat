@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"net/http"
 	"sync"
 
 	"zombiezen.com/go/sqlite"
@@ -33,26 +31,31 @@ type zonePolygon struct {
 	vertices [][2]float64
 	bbox     [4]float64
 }
+
+// Detector resolves GPS coordinates to JAKIM prayer zones using
+// pre-loaded polygon data. It performs no I/O — polygons must be
+// seeded into the database before calling NewDetector.
 type Detector struct {
-	pool     *sqlitex.Pool
 	polygons []zonePolygon
 	mu       sync.RWMutex
 }
 
+// NewDetector loads polygon data from the zone_polygons table.
+// Call SeedFromGeoJSON(pool) first if the table is empty.
 func NewDetector(pool *sqlitex.Pool) (*Detector, error) {
-	d := &Detector{pool: pool}
-	if err := d.load(); err != nil {
+	d := &Detector{}
+	if err := d.load(pool); err != nil {
 		return nil, fmt.Errorf("load detector: %w", err)
 	}
 	return d, nil
 }
 
-func (d *Detector) load() error {
-	conn, err := d.pool.Take(context.Background())
+func (d *Detector) load(pool *sqlitex.Pool) error {
+	conn, err := pool.Take(context.Background())
 	if err != nil {
 		return fmt.Errorf("take conn: %w", err)
 	}
-	defer d.pool.Put(conn)
+	defer pool.Put(conn)
 
 	var records []polygonRecord
 	err = sqlitex.Execute(conn, "SELECT jakim_code, state, name, polygon FROM zone_polygons", &sqlitex.ExecOptions{
@@ -71,10 +74,7 @@ func (d *Detector) load() error {
 	}
 
 	if len(records) == 0 {
-		if err := d.seedFromGeoJSON(); err != nil {
-			return fmt.Errorf("seed polygons: %w", err)
-		}
-		return d.load()
+		return fmt.Errorf("no polygon data loaded — run geo.SeedFromGeoJSON first")
 	}
 
 	for _, r := range records {
@@ -83,81 +83,6 @@ func (d *Detector) load() error {
 			continue
 		}
 		d.polygons = append(d.polygons, zp)
-	}
-
-	return nil
-}
-func (d *Detector) seedFromGeoJSON() error {
-	conn, err := d.pool.Take(context.Background())
-	if err != nil {
-		return fmt.Errorf("take conn: %w", err)
-	}
-	defer d.pool.Put(conn)
-
-	url := "https://raw.githubusercontent.com/mptwaktusolat/jakim.geojson/refs/heads/master/malaysia.district-jakim.geojson"
-	resp, err := http.Get(url)
-	if err != nil {
-		return fmt.Errorf("fetch GeoJSON: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read GeoJSON: %w", err)
-	}
-
-	var fc struct {
-		Features []struct {
-			Properties struct {
-				Name      string  `json:"name"`
-				CodeState float64 `json:"code_state"`
-				State     string  `json:"state"`
-				JakimCode string  `json:"jakim_code"`
-			} `json:"properties"`
-			Geometry struct {
-				Type        string          `json:"type"`
-				Coordinates json.RawMessage `json:"coordinates"`
-			} `json:"geometry"`
-		} `json:"features"`
-	}
-
-	if err := json.Unmarshal(body, &fc); err != nil {
-		return fmt.Errorf("unmarshal GeoJSON: %w", err)
-	}
-
-	if err := sqlitex.Execute(conn, "BEGIN IMMEDIATE", nil); err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-
-	for _, feat := range fc.Features {
-		polygonJSON, err := json.Marshal(feat.Geometry)
-		if err != nil {
-			continue
-		}
-
-		stringID := fmt.Sprintf("%s/%s", feat.Properties.JakimCode, feat.Properties.Name)
-
-		if err := sqlitex.Execute(conn,
-			`INSERT OR REPLACE INTO zone_polygons (string_id, name, code_state, state, jakim_code, polygon)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-			&sqlitex.ExecOptions{
-				Args: []interface{}{
-					stringID,
-					feat.Properties.Name,
-					int(feat.Properties.CodeState),
-					feat.Properties.State,
-					feat.Properties.JakimCode,
-					string(polygonJSON),
-				},
-			},
-		); err != nil {
-			sqlitex.Execute(conn, "ROLLBACK", nil)
-			return fmt.Errorf("insert polygon: %w", err)
-		}
-	}
-
-	if err := sqlitex.Execute(conn, "COMMIT", nil); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
 	}
 
 	return nil
@@ -174,7 +99,6 @@ func parsePolygon(r polygonRecord) (zonePolygon, error) {
 
 	var coords [][][]float64
 	if err := json.Unmarshal(geom.Coordinates, &coords); err != nil {
-		// Try MultiPolygon
 		var multiCoords [][][][]float64
 		if err := json.Unmarshal(geom.Coordinates, &multiCoords); err != nil {
 			return zonePolygon{}, fmt.Errorf("unmarshal coordinates: %w", err)
