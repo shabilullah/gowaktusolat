@@ -161,4 +161,3 @@ var waitForShutdown = func() {
 	defer signal.Stop(c)
 	<-c
 }
-
