@@ -165,3 +165,69 @@ func TestDaysInMonth(t *testing.T) {
 		}
 	}
 }
+
+func TestQueryPrayerTimesYear(t *testing.T) {
+	pool := setupQueryTestDB(t)
+	defer pool.Close()
+
+	rows, err := QueryPrayerTimesYear(pool, context.Background(), "SGR01", 2026)
+	if err != nil {
+		t.Fatalf("QueryPrayerTimesYear failed: %v", err)
+	}
+
+	if len(rows) != 5 {
+		t.Errorf("got %d rows for SGR01 2026, want 5", len(rows))
+	}
+
+	// All rows should be from June 2026
+	for _, r := range rows {
+		if len(r.Date) < 7 || r.Date[:7] != "2026-06" {
+			t.Errorf("row date %s is outside expected month 2026-06", r.Date)
+		}
+	}
+
+	// Ordered by date ascending
+	if rows[0].Date != "2026-06-01" {
+		t.Errorf("first date = %s, want 2026-06-01", rows[0].Date)
+	}
+	if rows[4].Date != "2026-06-05" {
+		t.Errorf("last date = %s, want 2026-06-05", rows[4].Date)
+	}
+}
+
+func TestQueryPrayerTimesYearMultipleZones(t *testing.T) {
+	pool := setupQueryTestDB(t)
+	defer pool.Close()
+
+	rows, err := QueryPrayerTimesYear(pool, context.Background(), "JHR01", 2026)
+	if err != nil {
+		t.Fatalf("QueryPrayerTimesYear failed: %v", err)
+	}
+
+	if len(rows) != 1 {
+		t.Errorf("got %d rows for JHR01 2026, want 1", len(rows))
+	}
+	if rows[0].Date != "2026-06-01" {
+		t.Errorf("date = %s, want 2026-06-01", rows[0].Date)
+	}
+}
+
+func TestQueryPrayerTimesYearNoData(t *testing.T) {
+	pool := setupQueryTestDB(t)
+	defer pool.Close()
+
+	_, err := QueryPrayerTimesYear(pool, context.Background(), "XXXXX", 2026)
+	if err != ErrNoRows {
+		t.Errorf("expected ErrNoRows, got %v", err)
+	}
+}
+
+func TestQueryPrayerTimesYearDifferentYear(t *testing.T) {
+	pool := setupQueryTestDB(t)
+	defer pool.Close()
+
+	_, err := QueryPrayerTimesYear(pool, context.Background(), "SGR01", 2025)
+	if err != ErrNoRows {
+		t.Errorf("expected ErrNoRows for 2025 (no data), got %v", err)
+	}
+}

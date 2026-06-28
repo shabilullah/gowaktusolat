@@ -73,6 +73,54 @@ func QueryPrayerTimes(pool *sqlitex.Pool, ctx context.Context, zone string, year
 	return results, nil
 }
 
+// QueryPrayerTimesYear returns all prayer times for a zone for the whole year,
+// ordered by date. Used by the year-PDF endpoint to avoid N+1 monthly queries.
+func QueryPrayerTimesYear(pool *sqlitex.Pool, ctx context.Context, zone string, year int) ([]PrayerTimeRow, error) {
+	conn, err := pool.Take(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("acquire db conn: %w", err)
+	}
+	defer pool.Put(conn)
+
+	startDate := fmt.Sprintf("%d-01-01", year)
+	endDate := fmt.Sprintf("%d-12-31", year)
+
+	var results []PrayerTimeRow
+	err = sqlitex.Execute(conn,
+		`SELECT date, hijri, imsak, fajr, syuruk, dhuha, dhuhr, asr, maghrib, isha
+		 FROM prayer_times
+		 WHERE location_code = ? AND date >= ? AND date <= ?
+		 ORDER BY date ASC`,
+		&sqlitex.ExecOptions{
+			Args: []interface{}{zone, startDate, endDate},
+			ResultFunc: func(stmt *sqlite.Stmt) error {
+				results = append(results, PrayerTimeRow{
+					Date:    stmt.ColumnText(0),
+					Hijri:   stmt.ColumnText(1),
+					Imsak:   stmt.ColumnText(2),
+					Fajr:    stmt.ColumnText(3),
+					Syuruk:  stmt.ColumnText(4),
+					Dhuha:   stmt.ColumnText(5),
+					Dhuhr:   stmt.ColumnText(6),
+					Asr:     stmt.ColumnText(7),
+					Maghrib: stmt.ColumnText(8),
+					Isha:    stmt.ColumnText(9),
+				})
+				return nil
+			},
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query prayer times year: %w", err)
+	}
+
+	if len(results) == 0 {
+		return nil, ErrNoRows
+	}
+
+	return results, nil
+}
+
 func daysInMonth(year, month int) int {
 	t := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC)
 	return t.Day()

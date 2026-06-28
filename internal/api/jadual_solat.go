@@ -50,16 +50,26 @@ func (h *JadualSolat) fetchSingleMonth(c fiber.Ctx, zone string, year, month int
 }
 
 func (h *JadualSolat) fetchYear(c fiber.Ctx, zone string, year int) error {
+	allRows, err := db.QueryPrayerTimesYear(h.Pool, c.Context(), zone, year)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+	}
 
-	var contents []string
-	daerah := lookupDaerah(h.Pool, zone)
-
-	for month := 1; month <= 12; month++ {
-		rows, err := db.QueryPrayerTimes(h.Pool, c.Context(), zone, year, month)
+	// Group rows by month from the single result set.
+	monthly := make([][]db.PrayerTimeRow, 13) // index 1–12
+	for _, row := range allRows {
+		t, err := time.Parse("2006-01-02", row.Date)
 		if err != nil {
-			return c.Status(500).JSON(fiber.Map{"message": err.Error()})
+			continue
 		}
-		contents = append(contents, generatePageContent(zone, daerah, year, month, rows))
+		m := t.Month()
+		monthly[m] = append(monthly[m], row)
+	}
+
+	daerah := lookupDaerah(h.Pool, zone)
+	contents := make([]string, 0, 12)
+	for month := 1; month <= 12; month++ {
+		contents = append(contents, generatePageContent(zone, daerah, year, month, monthly[month]))
 	}
 
 	pdf := buildMultiPagePDF(contents)
