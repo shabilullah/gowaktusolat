@@ -13,7 +13,6 @@ type Scheduler struct {
 	pool     *sqlitex.Pool
 	cron     *cron.Cron
 	schedule string
-	stop     chan struct{}
 }
 
 func NewScheduler(pool *sqlitex.Pool, schedule string) *Scheduler {
@@ -21,7 +20,6 @@ func NewScheduler(pool *sqlitex.Pool, schedule string) *Scheduler {
 		pool:     pool,
 		cron:     cron.New(),
 		schedule: schedule,
-		stop:     make(chan struct{}),
 	}
 }
 
@@ -46,7 +44,6 @@ func (s *Scheduler) Start() {
 }
 
 func (s *Scheduler) Stop() {
-	close(s.stop)
 	ctx := s.cron.Stop()
 	<-ctx.Done()
 }
