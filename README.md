@@ -1,6 +1,7 @@
 # Go Waktu Solat API
 
 A Go/Gofiber prayer time API server that scrapes prayer times from [JAKIM's e-Solat](https://www.e-solat.gov.my) and serves them in a v1-compatible REST API with GPS zone auto-detection.
+This API is live at [api.waktusolat.online](https://api.waktusolat.online/). Its structure and availability are provided on a best-effort basis and may change without notice.
 
 ## Quick Start
 
@@ -555,3 +556,7 @@ DB_PATH=/tmp/test.db ./scraper scrape --year=2025
 ## License
 
 MIT
+
+---
+
+Inspired by [mpwt-waktusolat/api-waktusolat-x](https://github.com/mptwaktusolat/api-waktusolat-x).
